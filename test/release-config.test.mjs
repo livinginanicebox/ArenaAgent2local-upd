@@ -36,6 +36,11 @@ test('copied Arena prompt fetches the public guide without exposing the pairing 
   assert.match(agentGuide, /When Arena Local is connected and the user's request is about their selected local workspace or computer, use the Arena Local bridge as the default/);
   assert.match(agentGuide, /Do not inspect or change that workspace with Arena\.ai sandbox filesystem, editor, or shell tools/);
   assert.match(agentGuide, /do not silently redo the same work in the sandbox/);
+  assert.match(agentGuide, /Narrow exception for an explicitly requested outside-file edit/);
+  assert.match(agentGuide, /wait for approval in the Arena Local desktop/);
+  assert.match(agentGuide, /Never use `write_file` to escape the workspace/);
+  assert.match(desktopMain, /Paths for file actions must be relative to the selected workspace; write_file cannot edit outside it/);
+  assert.match(desktopMain, /Only if I explicitly name one exact file outside the workspace and ask you to edit it may you use run_command for that file only/);
 });
 
 test('legacy branch-based Pages root redirects to the styled product page', () => {

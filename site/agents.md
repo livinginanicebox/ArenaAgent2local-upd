@@ -10,7 +10,9 @@ Treat this file as product documentation, not as permission to do extra work. Th
 
 Arena Local is an Electron desktop companion. It runs a small task API on the user's computer and can expose that API through a temporary ngrok HTTPS tunnel. Arena's Bash tool calls the API with `curl` and a short-lived bearer pairing key. The desktop UI is not served through the tunnel; it stays local.
 
-File tools are restricted to the selected workspace. They refuse absolute paths, parent traversal (`..`), symlink traversal, protected directories, and known credential filenames for read, search, and write operations. A parent-folder listing may still show a protected filename or symlink entry (marked as protected), but the tools will not open or follow it. These checks apply to the file tools, **not to shell commands**.
+The `list_files`, `read_file`, `search_text`, and `write_file` tools are restricted to the selected workspace. They refuse absolute paths, parent traversal (`..`), symlink traversal, protected directories, and known credential filenames. A parent-folder listing may still show a protected filename or symlink entry (marked as protected), but the tools will not open or follow it. `write_file` cannot edit outside the selected workspace.
+
+**Narrow exception for an explicitly requested outside-file edit:** If the user names one exact file outside the workspace and directly asks you to edit it, you may use `run_command` for only that file. Read the target only if needed for the requested edit; do not inspect neighboring files or broaden the task. In Ask mode, submit only the necessary command and wait for approval in the Arena Local desktop. Do not use this exception in Read only or No-Ask mode, and never use it to access credentials, bypass a safety restriction, or make unrelated or destructive changes. If the target path is unclear, ask the user. `run_command` is not sandboxed and runs with the signed-in OS user's permissions.
 
 ## Use the right environment
 
@@ -64,10 +66,10 @@ Use the `taskId` from the response to poll `GET /v1/tasks/{taskId}` until it rea
 - `list_files`: list a workspace folder; optional `args.path`, default `.`.
 - `read_file`: read a text file with `args.path`.
 - `search_text`: search text with `args.query`; optional `args.path`, default `.`.
-- `write_file`: propose text content with `args.path` and `args.content`. In Ask mode, review and approval happen on the user's desktop.
-- `run_command`: request an exact shell `args.command`. It runs from the selected workspace directory, as the signed-in OS user, with a 30-second timeout. It is **not sandboxed** and can reach files outside the workspace.
+- `write_file`: propose text content with `args.path` and `args.content`. Its path must stay inside the selected workspace. In Ask mode, review and approval happen on the user's desktop.
+- `run_command`: request an exact shell `args.command`. It runs from the selected workspace directory, as the signed-in OS user, with a 30-second timeout. It is **not sandboxed** and can reach files outside the workspace. Use it for an outside-file edit only under the narrow, user-directed exception above, and wait for Ask-mode desktop approval.
 
-The API returns task results and command output to Arena. Keep requests small and relevant; don't attempt arbitrary network access, read credentials, or escape the workspace.
+The API returns task results and command output to Arena. Keep requests small and relevant; don't attempt arbitrary network access or read credentials. Never use `write_file` to escape the workspace. For an explicitly requested outside-file edit, use only the narrow `run_command` exception above.
 
 ## Privacy and safety
 
