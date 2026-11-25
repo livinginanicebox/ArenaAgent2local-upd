@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a66">
+  <meta name="description" content="Answers about Arena Local, Arena.ai Bash, workspace access, permission modes, ngrok, privacy, and Windows downloads.">
+  <meta property="og:title" content="FAQ — Arena Local">
+  <meta property="og:description" content="Quick answers about setup, permissions, privacy, and troubleshooting.">
+  <title>FAQ // Arena Local</title>
+  <link rel="canonical" href="https://lumifaye.github.io/ArenaAgent2local/faq.html">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="outer-frame">
+    <div class="top-strip"><div class="site-width top-strip-inner"><span><i class="status-led" aria-hidden="true"></i> ARENA LOCAL / QUICK ANSWERS</span><span class="top-strip-right">NO MYSTERY SETTINGS</span></div></div>
+    <div class="site-width">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Arena Local home"><span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-wordmark">ARENA<span>LOCAL</span><small>DESKTOP BRIDGE</small></span></a>
+        <button class="nav-toggle" id="navToggle" type="button" aria-expanded="false" aria-controls="primaryNav"><span>MENU</span><b aria-hidden="true">☰</b></button>
+        <nav class="main-nav" id="primaryNav" aria-label="Main navigation">
+          <a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html" aria-current="page">FAQ</a><a href="./changelog.html">Updates</a><a class="nav-github" href="./download.html">Download <span aria-hidden="true">↓</span></a>
+        </nav>
+      </header>
+      <main id="main" class="subpage-main">
+        <p class="breadcrumb"><a href="./">Home</a><span aria-hidden="true">/</span> FAQ</p>
+        <section class="page-hero page-hero-compact" aria-labelledby="page-title">
+          <div><p class="eyebrow">FAST ANSWERS / ZERO GUESSING</p><h1 id="page-title">Good questions.<br><span>Clear boundaries.</span></h1><p>Still curious? Start with the safety page for the detailed data flow, or open an issue for a reproducible bug.</p><div class="hero-inline-links"><a class="page-button page-button-primary" href="./safety.html">Safety &amp; privacy <span aria-hidden="true">→</span></a><a class="quiet-link" href="https://github.com/lumifaye/ArenaAgent2local/issues" target="_blank" rel="noopener noreferrer">Report an issue ↗</a></div></div>
+          <div class="faq-hero-mark"><span>?</span><small>THE SHORT VERSION<br>ISN'T THE WHOLE STORY</small></div>
+        </section>
+
+        <section class="page-section faq-section" aria-labelledby="faq-setup-title">
+          <div class="faq-group-title"><span>01</span><h2 id="faq-setup-title">How it works</h2></div>
+          <div class="faq-list">
+            <details><summary>Is Arena Local a separate chat app or Arena clone?</summary><p>No. You continue prompting on Arena.ai. Arena Local is a desktop companion that receives authenticated requests from Arena's Bash tool and applies local permission controls.</p></details>
+            <details><summary>Does Arena Local upload my entire workspace?</summary><p>No. File contents are returned when requested through read/search actions. The app does not send every file automatically. Only request material you intend to share with the Arena.ai session.</p></details>
+            <details><summary>Why does it use ngrok?</summary><p>The desktop task API listens on loopback and is not directly reachable by Arena.ai. ngrok provides a temporary HTTPS path to that API. The desktop UI itself is not tunneled.</p></details>
+            <details><summary>Does Arena need my ngrok authtoken?</summary><p>No. The authtoken is used by the desktop app to start the tunnel and is separate from the short-lived pairing key in the copied setup prompt. Never paste the ngrok authtoken into Arena.</p></details>
+          </div>
+        </section>
+
+        <section class="page-section faq-section" aria-labelledby="faq-permission-title">
+          <div class="faq-group-title"><span>02</span><h2 id="faq-permission-title">Permissions &amp; safety</h2></div>
+          <div class="faq-list">
+            <details><summary>What is the default permission mode?</summary><p><strong>Ask before changes.</strong> Reads are available; writes and shell commands pause in the local approval queue until you approve or deny them. Read only blocks mutations. No approval — VERY DANGEROUS runs mutations immediately.</p></details>
+            <details><summary>Are terminal commands restricted to my selected folder?</summary><p>No. Commands run with your normal OS-user permissions and can access files outside the workspace. The workspace path checks protect file tools, not the shell. Review every command; the approval gate is not an OS sandbox.</p></details>
+            <details><summary>What happens when I stop the link or rotate the key?</summary><p>The tunnel URL or current bearer key is revoked, and pending approvals are cancelled. An action that was already approved and is running is not undone or interrupted.</p></details>
+            <details><summary>What happens in No approval mode?</summary><p>File writes and shell commands execute without a local per-action prompt. It is labeled <strong>VERY DANGEROUS</strong>, requires two native confirmations, and is temporary. Use Ask mode unless you understand the risks.</p></details>
+            <details><summary>Are protected filenames completely invisible?</summary><p>Not always. A parent-folder listing may show the name of a protected file or symlink with a LOCKED marker. File tools will not open or follow it. Do not use shell commands to bypass these protections.</p></details>
+          </div>
+        </section>
+
+        <section class="page-section faq-section" aria-labelledby="faq-setup-title2">
+          <div class="faq-group-title"><span>03</span><h2 id="faq-setup-title2">Setup &amp; downloads</h2></div>
+          <div class="faq-list">
+            <details><summary>Why does Windows warn that the installer is unrecognized?</summary><p>The installer is not code-signed, so Windows may show its standard SmartScreen warning. Download it only from the official GitHub release linked on this site, and check the published SHA-256 sidecar when available.</p></details>
+            <details><summary>Where is the latest installer?</summary><p>Use the <a href="./download.html">download page</a>. It resolves the latest published GitHub Release and shows whether a checksum sidecar is available. The release assets are hosted on GitHub.</p></details>
+            <details><summary>My connection will not start. What should I check?</summary><p>Confirm the ngrok authtoken was saved, that the computer has an internet connection, and that Arena Local shows the current setup state. Try stopping and starting the link again; if it still fails, copy the exact error text (without any secrets) into a GitHub issue.</p></details>
+            <details><summary>Can I change the workspace while connected?</summary><p>No. Stop the remote link first, then choose a different folder. Changing workspaces clears session approvals and returns no-approval mode to Ask.</p></details>
+            <details><summary>Where should I report a bug?</summary><p>Open a <a href="https://github.com/lumifaye/ArenaAgent2local/issues" target="_blank" rel="noopener noreferrer">GitHub issue</a> with the app version, operating system, steps to reproduce, and relevant logs. Remove the tunnel URL, bearer key, ngrok token, workspace content, and personal data first.</p></details>
+          </div>
+        </section>
+        <section class="page-cta"><div><p class="eyebrow">STILL NEED A WALKTHROUGH?</p><h2>Start with the setup steps.</h2><p>The guide keeps Arena.ai prompting and desktop permissions in the right places.</p></div><a class="page-button page-button-primary" href="./getting-started.html">Get started <span aria-hidden="true">→</span></a></section>
+      </main>
+      <footer class="site-footer page-footer"><a class="footer-brand" href="./">ARENA<span>LOCAL</span></a><p>Made for local work. Keep the pairing key private.</p><div><a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html">FAQ</a><a href="./agents.md">Agent guide</a><a href="./download.html">Download</a><a href="https://github.com/lumifaye/ArenaAgent2local" target="_blank" rel="noopener noreferrer">Source</a></div><small>© <span id="year">2026</span> Arena Local · An early prototype</small></footer>
+    </div>
+  </div>
+</body>
+</html>

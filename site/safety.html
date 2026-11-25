@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a66">
+  <meta name="description" content="Understand Arena Local's privacy boundaries, file protections, ngrok tunnel, bearer key, and VERY DANGEROUS no-approval mode.">
+  <meta property="og:title" content="Safety & privacy — Arena Local">
+  <meta property="og:description" content="Know what stays local, what is sent to Arena.ai, and where the security boundaries are.">
+  <title>Safety &amp; privacy // Arena Local</title>
+  <link rel="canonical" href="https://lumifaye.github.io/ArenaAgent2local/safety.html">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="outer-frame">
+    <div class="top-strip"><div class="site-width top-strip-inner"><span><i class="status-led" aria-hidden="true"></i> ARENA LOCAL / SAFETY BRIEFING</span><span class="top-strip-right">READ BEFORE CONNECTING</span></div></div>
+    <div class="site-width">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Arena Local home"><span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-wordmark">ARENA<span>LOCAL</span><small>DESKTOP BRIDGE</small></span></a>
+        <button class="nav-toggle" id="navToggle" type="button" aria-expanded="false" aria-controls="primaryNav"><span>MENU</span><b aria-hidden="true">☰</b></button>
+        <nav class="main-nav" id="primaryNav" aria-label="Main navigation">
+          <a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html" aria-current="page">Safety</a><a href="./faq.html">FAQ</a><a href="./changelog.html">Updates</a><a class="nav-github" href="./download.html">Download <span aria-hidden="true">↓</span></a>
+        </nav>
+      </header>
+      <main id="main" class="subpage-main">
+        <p class="breadcrumb"><a href="./">Home</a><span aria-hidden="true">/</span> Safety &amp; privacy</p>
+        <section class="page-hero safety-hero" aria-labelledby="page-title">
+          <div><p class="eyebrow">THE IMPORTANT PART</p><h1 id="page-title">Your desktop is in control.<br><span>Know the boundaries.</span></h1><p>Arena Local makes remote tool requests visible and permissioned. It is not an operating-system sandbox, and anything you ask Arena to read is sent back to the Arena.ai session.</p><a class="page-button page-button-danger" href="#no-approval">Read the no-approval warning <span aria-hidden="true">↓</span></a></div>
+          <aside class="warning-console" aria-label="Safety summary"><span class="console-top"><i></i><i></i><i></i> SECURITY CHECK</span><strong>ASK IS THE DEFAULT</strong><p>Review before a file write or command runs.</p><hr><b>NO APPROVAL</b><p>VERY DANGEROUS. Changes run immediately; shell access is not sandboxed.</p></aside>
+        </section>
+
+        <section class="page-section" aria-labelledby="flow-title">
+          <div class="page-section-heading"><div><p class="eyebrow">DATA FLOW</p><h2 id="flow-title">What leaves this computer?</h2></div><p>Only request the files and actions that are relevant to the user's task. Do not assume that workspace contents stay local just because the app does.</p></div>
+          <div class="data-flow-grid">
+            <article><span>STAYS LOCAL</span><h3>Desktop interface</h3><p>The Electron window and workspace browser are opened locally. The UI is not served through the ngrok tunnel.</p></article>
+            <article><span>ENCRYPTED LINK</span><h3>Requested file data</h3><p>Text requested with read or search tools travels over the temporary ngrok HTTPS connection and is returned to Arena.ai.</p></article>
+            <article><span>CAPABILITY</span><h3>Pairing key</h3><p>The copied prompt contains a short-lived bearer key. Anyone who obtains it may call the exposed API until the link stops or the key rotates.</p></article>
+            <article><span>SEPARATE SECRET</span><h3>ngrok authtoken</h3><p>The tunnel credential is stored on this computer when possible and is not included in the Arena prompt. Arena does not need it.</p></article>
+          </div>
+        </section>
+
+        <section class="page-section" aria-labelledby="controls-title">
+          <div class="page-section-heading"><div><p class="eyebrow">LOCAL PERMISSION CONTROLS</p><h2 id="controls-title">Three modes. No hidden middle.</h2></div><p>Changing modes cancels pending changes and clears exact-action session approvals. The no-approval mode has two native confirmation dialogs.</p></div>
+          <div class="mode-grid">
+            <article class="mode-card mode-ask"><span class="mode-status">DEFAULT / RECOMMENDED</span><h3>Ask before changes</h3><p>Reads run automatically. Writes show a proposed diff; shell requests show the exact command. You approve once, allow the exact action for the session, or deny.</p></article>
+            <article class="mode-card mode-read"><span class="mode-status">READ-ONLY</span><h3>Inspect, don't mutate</h3><p>File writes and shell commands are denied. The agent must not retry by using another route or ask to weaken the control.</p></article>
+            <article class="mode-card mode-danger"><span class="mode-status">VERY DANGEROUS</span><h3>No approval</h3><p>Remote writes and commands run immediately without a per-action prompt. This mode can cause data loss and resets when the connection stops, the key rotates, the workspace changes, or the app closes.</p></article>
+          </div>
+        </section>
+
+        <section class="page-section page-callout page-callout-danger" id="no-approval" aria-labelledby="danger-title">
+          <span class="callout-mark" aria-hidden="true">!</span><div><p class="eyebrow">NO APPROVAL — VERY DANGEROUS</p><h2 id="danger-title">Shell commands can reach beyond the selected folder.</h2><p>File-tool path checks do not constrain shell commands. An approved or auto-approved command runs as your signed-in OS user, can access files that account can reach, and may change or delete data. Approval is a pause for your decision—not a sandbox.</p></div>
+        </section>
+
+        <section class="page-section" aria-labelledby="files-title">
+          <div class="page-section-heading"><div><p class="eyebrow">FILE-TOOL PROTECTIONS</p><h2 id="files-title">Useful guardrails, not magic.</h2></div><p>The checks below reduce accidental exposure through file tools. They do not protect against an unsafe shell command or a compromised operating system.</p></div>
+          <div class="page-grid page-grid-two">
+            <article class="info-card"><p class="card-kicker">BLOCKED BY FILE TOOLS</p><h3>Paths and sensitive names</h3><ul class="check-list"><li>Absolute paths, parent traversal, and symlink traversal.</li><li>Protected directories such as <code>.git</code>, <code>.ssh</code>, <code>.aws</code>, and dependency/build folders.</li><li>Common credential filenames such as <code>.env*</code>, <code>.npmrc</code>, <code>.netrc</code>, private-key extensions, and credential files.</li><li>Binary files; reads and writes over 256 KB; and search candidates over 512 KB are skipped or rejected.</li></ul><p class="fine-print">A parent-folder listing may show a protected filename or symlink entry marked as protected, but the tools will not open or follow it.</p></article>
+            <article class="info-card"><p class="card-kicker">LIMITS TO REMEMBER</p><h3>What the guardrails don't do</h3><ul class="check-list"><li>They do not sandbox terminal commands or restrict their OS permissions.</li><li>They do not stop Arena from receiving content you explicitly ask it to read.</li><li>They do not keep a copied bearer key secret after it has been shared.</li><li>They do not undo an action that you already approved and that is running.</li></ul><p class="fine-print">Use a workspace you control, keep the prompt private, and inspect every command before approving it.</p></article>
+          </div>
+        </section>
+
+        <section class="page-section" aria-labelledby="checklist-title">
+          <div class="page-section-heading"><div><p class="eyebrow">QUICK CHECKLIST</p><h2 id="checklist-title">Before you click Connect.</h2></div></div>
+          <ol class="safety-checklist"><li>Choose only the folder needed for the task.</li><li>Use Ask mode unless you have a specific, informed reason not to.</li><li>Keep the Arena setup prompt and pairing key private.</li><li>Read the exact command and review the complete diff before approving.</li><li>Stop the link or rotate the key when finished.</li></ol>
+        </section>
+
+        <section class="page-cta"><div><p class="eyebrow">PROTOTYPE NOTICE</p><h2>Use the controls. Keep a backup.</h2><p>Arena Local is an early prototype—not a security boundary for untrusted users or a replacement for OS-level isolation.</p></div><a class="page-button page-button-primary" href="./getting-started.html">Setup guide <span aria-hidden="true">→</span></a></section>
+      </main>
+      <footer class="site-footer page-footer"><a class="footer-brand" href="./">ARENA<span>LOCAL</span></a><p>Made for local work. Keep the pairing key private.</p><div><a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html">FAQ</a><a href="./agents.md">Agent guide</a><a href="./download.html">Download</a><a href="https://github.com/lumifaye/ArenaAgent2local" target="_blank" rel="noopener noreferrer">Source</a></div><small>© <span id="year">2026</span> Arena Local · An early prototype</small></footer>
+    </div>
+  </div>
+</body>
+</html>

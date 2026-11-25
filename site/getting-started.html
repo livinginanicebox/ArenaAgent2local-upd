@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a66">
+  <meta name="description" content="Set up Arena Local, connect Arena.ai Bash through ngrok HTTPS, and keep file changes behind local approval.">
+  <meta property="og:title" content="Getting started — Arena Local">
+  <meta property="og:description" content="A step-by-step setup guide for Arena Local on Windows.">
+  <title>Get started // Arena Local</title>
+  <link rel="canonical" href="https://lumifaye.github.io/ArenaAgent2local/getting-started.html">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="outer-frame">
+    <div class="top-strip"><div class="site-width top-strip-inner"><span><i class="status-led" aria-hidden="true"></i> ARENA LOCAL / QUICK START</span><span class="top-strip-right">KEEP YOUR SESSION ON ARENA.AI</span></div></div>
+    <div class="site-width">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Arena Local home"><span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-wordmark">ARENA<span>LOCAL</span><small>DESKTOP BRIDGE</small></span></a>
+        <button class="nav-toggle" id="navToggle" type="button" aria-expanded="false" aria-controls="primaryNav"><span>MENU</span><b aria-hidden="true">☰</b></button>
+        <nav class="main-nav" id="primaryNav" aria-label="Main navigation">
+          <a href="./features.html">Features</a><a href="./getting-started.html" aria-current="page">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html">FAQ</a><a href="./changelog.html">Updates</a><a class="nav-github" href="./download.html">Download <span aria-hidden="true">↓</span></a>
+        </nav>
+      </header>
+      <main id="main" class="subpage-main">
+        <p class="breadcrumb"><a href="./">Home</a><span aria-hidden="true">/</span> Get started</p>
+        <section class="page-hero page-hero-compact" aria-labelledby="page-title">
+          <div><p class="eyebrow">SETUP / ABOUT FIVE MINUTES</p><h1 id="page-title">From install to<br><span>first prompt.</span></h1><p>Arena Local is a desktop companion—not a new chat website. You keep prompting on Arena.ai and use Arena's Bash tool to request scoped work from this computer.</p><div class="hero-inline-links"><a class="page-button page-button-primary" href="./download.html">Get the Windows installer <span aria-hidden="true">↓</span></a><a class="quiet-link" href="./safety.html">Review safety first ↗</a></div></div>
+          <div class="setup-summary"><span class="flow-label">YOU WILL NEED</span><div><b>01</b><span>A Windows x64 PC you control</span></div><div><b>02</b><span>A folder you choose for the task</span></div><div><b>03</b><span>Your ngrok authtoken</span></div><div><b>04</b><span>An Arena.ai chat with Bash</span></div></div>
+        </section>
+
+        <section class="page-section" aria-labelledby="steps-title">
+          <div class="page-section-heading"><div><p class="eyebrow">THE HAPPY PATH</p><h2 id="steps-title">Six small steps.</h2></div><p>Start in Ask mode so changes are reviewed on your desktop. You can leave the connection stopped whenever you are not using it.</p></div>
+          <ol class="step-timeline">
+            <li><span class="timeline-number">01</span><div><p class="card-kicker">INSTALL</p><h3>Download and open Arena Local</h3><p>Use the Windows x64 installer from the <a href="./download.html">download page</a>. Windows may show an unrecognized-publisher SmartScreen warning because these builds are not code-signed. Only continue if you trust the source and verify the release.</p></div></li>
+            <li><span class="timeline-number">02</span><div><p class="card-kicker">SCOPE</p><h3>Choose the project folder</h3><p>Select the folder you want Arena's file tools to use. Keep unrelated or sensitive projects out of scope. File operations have path protections, but shell commands are not sandboxed.</p></div></li>
+            <li><span class="timeline-number">03</span><div><p class="card-kicker">CREDENTIAL</p><h3>Save your ngrok authtoken</h3><p>Paste the authtoken from your ngrok account into Arena Local. When OS secure storage is available, the app encrypts the saved token with Electron safeStorage; otherwise it stays in memory until the app closes. This token is separate from the pairing key and is never included in the Arena prompt.</p></div></li>
+            <li><span class="timeline-number">04</span><div><p class="card-kicker">CONNECT</p><h3>Start the remote connection</h3><p>Arena Local starts a temporary HTTPS tunnel to its loopback task API. The desktop interface remains local. A connection attempt can be cancelled; stopping the link revokes the URL and cancels pending approvals.</p></div></li>
+            <li><span class="timeline-number">05</span><div><p class="card-kicker">PAIR</p><h3>Copy the setup prompt into Arena.ai</h3><p>Click <strong>Copy Arena setup prompt</strong>, then paste it into the Arena.ai conversation. The prompt includes the live URL and bearer key and tells Arena's Bash tool to fetch the public <a href="./agents.md">agent guide</a> before making bridge requests. Keep the copied prompt private.</p></div></li>
+            <li><span class="timeline-number">06</span><div><p class="card-kicker">WORK</p><h3>Request a focused task</h3><p>Start with a narrow file listing or relevant read. Review every proposed diff and shell command in the local approval queue. Wait for the desktop decision instead of retrying or routing around it.</p></div></li>
+          </ol>
+        </section>
+
+        <section class="page-section page-callout page-callout-blue" aria-labelledby="prompt-title">
+          <span class="callout-mark" aria-hidden="true">⌘</span><div><p class="eyebrow">WHERE THE CHAT HAPPENS</p><h2 id="prompt-title">Prompt on Arena.ai. Control on your PC.</h2><p>Arena Local does not embed Arena's interface. Arena's Bash tool sends authenticated requests over HTTPS; your local app enforces the permission mode and runs allowed file tools.</p></div><a class="quiet-link" href="./features.html">See how the bridge works →</a>
+        </section>
+
+        <section class="page-section" aria-labelledby="end-title">
+          <div class="page-section-heading"><div><p class="eyebrow">WHEN YOU'RE DONE</p><h2 id="end-title">Close the loop.</h2></div><p>Stop the link from Arena Local when the work is done. No-approval mode resets when the link stops, the key rotates, the workspace changes, or the app closes.</p></div>
+          <div class="page-grid page-grid-two"><article class="info-card"><p class="card-kicker">REVOKE ACCESS</p><h3>Stop or rotate</h3><p>Stopping the tunnel or rotating the pairing key revokes the current instructions. Pending approvals are cancelled; an action already approved and running is not undone or interrupted.</p></article><article class="info-card"><p class="card-kicker">NEED A HAND?</p><h3>Check the guide and FAQ</h3><p>Read the <a href="./agents.md">agent guide</a> for the API workflow, or open the <a href="./faq.html">FAQ</a> for setup and troubleshooting answers.</p></article></div>
+        </section>
+
+        <section class="page-cta"><div><p class="eyebrow">DEFAULT TO REVIEW</p><h2>Start with Ask mode.</h2><p>Read the safety model before changing permission settings. No approval — VERY DANGEROUS can run shell commands without a per-action prompt.</p></div><a class="page-button page-button-danger" href="./safety.html">Read safety notes <span aria-hidden="true">→</span></a></section>
+      </main>
+      <footer class="site-footer page-footer"><a class="footer-brand" href="./">ARENA<span>LOCAL</span></a><p>Made for local work. Keep the pairing key private.</p><div><a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html">FAQ</a><a href="./agents.md">Agent guide</a><a href="./download.html">Download</a><a href="https://github.com/lumifaye/ArenaAgent2local" target="_blank" rel="noopener noreferrer">Source</a></div><small>© <span id="year">2026</span> Arena Local · An early prototype</small></footer>
+    </div>
+  </div>
+</body>
+</html>

@@ -24,14 +24,18 @@
 
     <div class="site-width">
       <header class="site-header">
-        <a class="brand" href="#top" aria-label="Arena Local home">
+        <a class="brand" href="./" aria-label="Arena Local home">
           <span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
           <span class="brand-wordmark">ARENA<span>LOCAL</span><small>DESKTOP BRIDGE</small></span>
         </a>
-        <nav class="main-nav" aria-label="Main navigation">
-          <a href="#features">Features</a>
-          <a href="#how-it-works">How it works</a>
-          <a class="nav-github" href="https://github.com/lumifaye/ArenaAgent2local" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+        <button class="nav-toggle" id="navToggle" type="button" aria-expanded="false" aria-controls="primaryNav"><span>MENU</span><b aria-hidden="true">☰</b></button>
+        <nav class="main-nav" id="primaryNav" aria-label="Main navigation">
+          <a href="./features.html">Features</a>
+          <a href="./getting-started.html">Get started</a>
+          <a href="./safety.html">Safety</a>
+          <a href="./faq.html">FAQ</a>
+          <a href="./changelog.html">Updates</a>
+          <a class="nav-github" href="./download.html">Download <span aria-hidden="true">↓</span></a>
         </nav>
       </header>
 
@@ -132,10 +136,22 @@
           </div>
         </section>
 
+        <section class="resource-section" aria-labelledby="resources-title">
+          <div class="resource-heading"><div><p class="eyebrow">EXPLORE THE NETWORK</p><h2 id="resources-title">Pick your next <span>portal.</span></h2></div><p>Clear answers before you connect, plus practical steps for getting started.</p></div>
+          <div class="resource-grid">
+            <a class="resource-card" href="./features.html"><span>01 / TOUR</span><strong>Explore the features</strong><small>What the bridge can—and cannot—do <b aria-hidden="true">↗</b></small></a>
+            <a class="resource-card" href="./getting-started.html"><span>02 / SETUP</span><strong>Get connected</strong><small>Install, configure, and prompt on Arena.ai <b aria-hidden="true">↗</b></small></a>
+            <a class="resource-card resource-card-warning" href="./safety.html"><span>03 / SAFETY</span><strong>Know the boundaries</strong><small>Permissions, privacy, and shell risks <b aria-hidden="true">↗</b></small></a>
+            <a class="resource-card" href="./faq.html"><span>04 / ANSWERS</span><strong>Read the FAQ</strong><small>Short answers to common questions <b aria-hidden="true">↗</b></small></a>
+            <a class="resource-card" href="./agents.md"><span>05 / AGENT DOCS</span><strong>Open agents.md</strong><small>Usage notes for Arena's Bash tool <b aria-hidden="true">↗</b></small></a>
+            <a class="resource-card" href="./changelog.html"><span>06 / UPDATES</span><strong>What's new</strong><small>Release notes and improvements <b aria-hidden="true">↗</b></small></a>
+          </div>
+        </section>
+
         <section class="safety-panel" aria-labelledby="safety-title">
           <div class="safety-symbol" aria-hidden="true">!</div>
           <div class="safety-copy"><p class="eyebrow">PLEASE READ BEFORE CONNECTING</p><h2 id="safety-title">Shell access is powerful.</h2><p>Commands run as your normal operating-system user and can reach outside the selected folder. Ask is the default. Read only blocks writes and commands. <strong>No approval — VERY DANGEROUS</strong> skips per-action prompts and can cause data loss; enable it only if you understand the consequences.</p></div>
-          <a class="safety-link" href="https://github.com/lumifaye/ArenaAgent2local#permission-and-privacy-model" target="_blank" rel="noopener noreferrer">Read the safety notes <span aria-hidden="true">↗</span></a>
+          <a class="safety-link" href="./safety.html">Read the safety notes <span aria-hidden="true">↗</span></a>
         </section>
 
         <section class="final-cta" aria-labelledby="cta-title">
@@ -152,7 +168,7 @@
       <footer class="site-footer">
         <a class="footer-brand" href="#top">ARENA<span>LOCAL</span></a>
         <p>Made for local work. Keep the pairing key private.</p>
-        <div><a href="./agents.md">Agent guide</a><a href="https://github.com/lumifaye/ArenaAgent2local" target="_blank" rel="noopener noreferrer">Source</a><a href="https://github.com/lumifaye/ArenaAgent2local/releases" target="_blank" rel="noopener noreferrer">Releases</a><a href="https://github.com/lumifaye/ArenaAgent2local/issues" target="_blank" rel="noopener noreferrer">Support</a></div>
+        <div><a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html">FAQ</a><a href="./agents.md">Agent guide</a><a href="./download.html">Download</a><a href="https://github.com/lumifaye/ArenaAgent2local" target="_blank" rel="noopener noreferrer">Source</a><a href="https://github.com/lumifaye/ArenaAgent2local/issues" target="_blank" rel="noopener noreferrer">Support</a></div>
         <small>© <span id="year">2026</span> Arena Local · An early prototype</small>
       </footer>
     </div>

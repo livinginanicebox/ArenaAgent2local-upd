@@ -156,6 +156,29 @@ test('approval is refused if a file changes after the desktop diff was reviewed'
   assert.equal(await fs.readFile(filePath, 'utf8'), '# Changed by user while approval was pending\n');
 });
 
+test('a session approval does not return after connection approvals are cleared mid-action', async (t) => {
+  const fixture = await makeFixture(t);
+  const request = {
+    requestId: 'session-race-0001',
+    action: 'run_command',
+    args: { command: 'node -e "setTimeout(function(){},250)"' },
+  };
+  const submitted = await postTask(fixture, request);
+  const queued = await submitted.json();
+  assert.equal(queued.status, 'awaiting_approval');
+
+  const approving = fixture.api.approveTask(queued.taskId, 'approve_session');
+  assert.equal(fixture.api.getTasks().find((task) => task.taskId === queued.taskId).status, 'running');
+  fixture.api.cancelPendingChanges('Connection stopped during the action.');
+  await approving;
+
+  const next = await postTask(fixture, {
+    ...request,
+    requestId: 'session-race-0002',
+  });
+  assert.equal((await next.json()).status, 'awaiting_approval');
+});
+
 test('no-ask mode auto-runs writes and commands and marks them as dangerous', async (t) => {
   const fixture = await makeFixture(t, 'no-ask');
   const writeResponse = await postTask(fixture, {

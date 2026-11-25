@@ -35,7 +35,7 @@
         <strong>Local permission gate</strong>
         <p id="sidebarSecurityCopy">Arena can only request scoped actions. File writes and shell commands wait for you here.</p>
       </div>
-      <div class="sidebar-footer"><span class="mini-avatar">A</span><span><strong>Arena Local</strong><small>Desktop companion</small></span><span class="footer-version">v0.1</span></div>
+      <div class="sidebar-footer"><span class="mini-avatar">A</span><span><strong>Arena Local</strong><small>Desktop companion</small></span><span class="footer-version" id="appVersion">v0.1.1</span></div>
     </aside>
 
     <main class="main-area">
@@ -73,7 +73,7 @@
                 <button class="secondary-button" id="saveNgrokTokenBtn" type="button">Save token</button>
               </div>
               <div class="token-status-row"><span class="token-indicator" id="tokenIndicator"></span><span id="ngrokTokenStatus">No ngrok token saved</span><button class="text-button" id="forgetNgrokTokenBtn" type="button" hidden>Forget</button></div>
-              <div class="start-row"><button class="primary-button start-tunnel-button" id="startTunnelBtn" type="button" disabled><span class="start-icon">↗</span><span>Start remote connection</span></button><span class="start-note">The public link is created only when you start it.</span></div>
+              <div class="start-row"><button class="primary-button start-tunnel-button" id="startTunnelBtn" type="button" disabled><span class="start-icon">↗</span><span id="startTunnelLabel">Start remote connection</span></button><button class="secondary-button cancel-tunnel-button" id="cancelTunnelBtn" type="button" hidden>Cancel attempt</button><span class="start-note" id="startNote">The public link is created only when you start it.</span></div>
             </div>
             <div class="live-connection" id="liveConnection" hidden>
               <div class="live-connection-main"><div class="live-icon"><span></span><span></span><span></span></div><div><strong>Your desktop is reachable</strong><small>HTTPS through ngrok · authenticated task API only</small></div><span class="live-tag">LIVE</span></div>
@@ -118,7 +118,9 @@
           <section class="inspector-panel files-panel">
             <div class="inspector-heading"><div><span class="section-eyebrow">LOCAL PREVIEW</span><h2>Files</h2></div><button class="refresh-button" id="refreshFilesBtn" type="button" title="Refresh files" aria-label="Refresh files">↻</button></div>
             <div class="file-breadcrumbs" id="fileBreadcrumbs"></div>
-            <div class="file-list" id="fileList"><div class="loading-row"><span class="mini-spinner"></span> Loading files…</div></div>
+            <label class="sr-only" for="fileFilter">Filter visible files</label>
+            <input class="file-filter" id="fileFilter" type="search" autocomplete="off" placeholder="Filter visible files…">
+            <div class="file-list" id="fileList" aria-live="polite"><div class="loading-row"><span class="mini-spinner"></span> Loading files…</div></div>
             <div class="file-foot" id="fileFoot">Arena can only see files in the selected folder.</div>
           </section>
 

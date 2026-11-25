@@ -178,6 +178,7 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
   const tasks = new Map();
   const requestIndex = new Map();
   const approvedActions = new Map();
+  let approvalEpoch = 0;
   let rateWindowStart = Date.now();
   let rateCount = 0;
 
@@ -236,6 +237,11 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
     }
   }
 
+  function clearApprovedActions() {
+    approvalEpoch += 1;
+    approvedActions.clear();
+  }
+
   function clearApprovalTimeout(task) {
     if (task.approvalTimeout) clearTimeout(task.approvalTimeout);
     task.approvalTimeout = null;
@@ -261,13 +267,14 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
       return safeDesktopTask(task);
     }
     const rememberForSession = decision === 'approve_session';
+    const approvalEpochAtStart = approvalEpoch;
     const expectedWriteState = task.action === 'write_file' && task.preview
       ? { exists: task.preview.exists, before: task.preview.before }
       : null;
     task.preview = null;
     setStatus(task, 'running', { message: undefined });
     await executeTask(task, expectedWriteState);
-    if (rememberForSession && task.status === 'completed') {
+    if (rememberForSession && task.status === 'completed' && approvalEpoch === approvalEpochAtStart && getPermissionMode() === 'ask') {
       const trustedState = task.action === 'write_file' ? { exists: true, before: task.args.content } : null;
       approvedActions.set(task.fingerprint, trustedState);
     }
@@ -363,7 +370,7 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
     for (const task of tasks.values()) {
       if (task.status === 'awaiting_approval' || task.status === 'preparing') denyTask(task, reason, 'cancelled');
     }
-    approvedActions.clear();
+    clearApprovedActions();
     changed();
   }
 
@@ -408,6 +415,6 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
     getTasks: getDesktopTasks,
     approveTask,
     cancelPendingChanges,
-    clearApprovedActions: () => approvedActions.clear(),
+    clearApprovedActions,
   };
 }

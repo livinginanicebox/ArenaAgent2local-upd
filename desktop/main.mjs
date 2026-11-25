@@ -18,6 +18,9 @@ let ngrokAuthtoken = '';
 let savedEncryptedNgrokToken = '';
 let pairingToken = createPairingToken();
 let tunnelListener = null;
+let tunnelStartPromise = null;
+let tunnelStopPromise = null;
+let tunnelGeneration = 0;
 let tunnelUrl = '';
 let userConfigPath = '';
 let finishingQuit = false;
@@ -84,10 +87,13 @@ async function savePreferences() {
 
 function snapshot() {
   return {
+    appVersion: app.getVersion(),
     workspaceRoot,
     workspaceName: path.basename(workspaceRoot || '') || 'Workspace',
     permissionMode,
     tunnelActive: Boolean(tunnelListener),
+    tunnelStarting: Boolean(tunnelStartPromise),
+    tunnelStopping: Boolean(tunnelStopPromise),
     tunnelUrl,
     ngrokTokenConfigured: Boolean(ngrokAuthtoken),
     ngrokTokenPersistent: Boolean(savedEncryptedNgrokToken),
@@ -164,47 +170,93 @@ async function startLocalApi() {
 }
 
 async function startTunnel() {
+  if (finishingQuit) throw new Error('Arena Local is closing.');
+  if (tunnelStopPromise) await tunnelStopPromise;
   if (tunnelListener) return snapshot();
+  if (tunnelStartPromise) {
+    await tunnelStartPromise;
+    return snapshot();
+  }
   if (!ngrokAuthtoken) throw new Error('Add your ngrok authtoken first. It stays on this computer.');
   if (!apiPort) throw new Error('The local bridge is still starting. Try again in a moment.');
-  try {
-    const ngrokModule = await import('@ngrok/ngrok');
-    const ngrok = ngrokModule.default || ngrokModule;
-    tunnelListener = await ngrok.forward({ addr: `127.0.0.1:${apiPort}`, authtoken: ngrokAuthtoken });
-    tunnelUrl = tunnelListener.url();
-    if (!tunnelUrl || !String(tunnelUrl).startsWith('https://')) {
-      await tunnelListener.close();
-      tunnelListener = null;
+
+  const generation = tunnelGeneration;
+  const attempt = (async () => {
+    let listener = null;
+    try {
+      const ngrokModule = await import('@ngrok/ngrok');
+      const ngrok = ngrokModule.default || ngrokModule;
+      listener = await ngrok.forward({ addr: `127.0.0.1:${apiPort}`, authtoken: ngrokAuthtoken });
+      const url = listener.url();
+      if (!url || !String(url).startsWith('https://')) {
+        throw new Error('ngrok did not provide an HTTPS URL. No remote connection was opened.');
+      }
+      if (generation !== tunnelGeneration || finishingQuit) {
+        await Promise.resolve(listener.close()).catch(() => {});
+        listener = null;
+        throw new Error('Connection attempt was cancelled.');
+      }
+      tunnelListener = listener;
+      tunnelUrl = String(url);
+      api.cancelPendingChanges('The remote connection restarted.');
+      api.clearApprovedActions();
+    } catch (error) {
+      if (listener) {
+        if (tunnelListener === listener) tunnelListener = null;
+        await Promise.resolve(listener.close()).catch(() => {});
+      }
       tunnelUrl = '';
-      throw new Error('ngrok did not provide an HTTPS URL. No remote connection was opened.');
+      throw new Error(error.message || 'Could not start the ngrok tunnel.');
     }
-    api.cancelPendingChanges('The remote connection restarted.');
-    api.clearApprovedActions();
-    publishState();
-    return snapshot();
-  } catch (error) {
-    tunnelListener = null;
-    tunnelUrl = '';
-    publishState();
-    throw new Error(error.message || 'Could not start the ngrok tunnel.');
+  })();
+
+  tunnelStartPromise = attempt;
+  publishState();
+  try {
+    await attempt;
+  } finally {
+    if (tunnelStartPromise === attempt) {
+      tunnelStartPromise = null;
+      publishState();
+    }
   }
+  return snapshot();
 }
 
 async function stopTunnel(reason = 'Remote connection stopped on this computer.') {
-  api?.cancelPendingChanges(reason);
-  api?.clearApprovedActions();
-  if (permissionMode === 'no-ask') {
-    permissionMode = 'ask';
-    await savePreferences().catch((error) => console.error(`[arena-local] Could not persist safe permission mode: ${error.message}`));
+  if (tunnelStopPromise) {
+    await tunnelStopPromise;
+    return snapshot();
   }
-  const listener = tunnelListener;
-  tunnelListener = null;
-  tunnelUrl = '';
-  if (listener) {
-    try { await listener.close(); }
-    catch (error) { console.error(`[arena-local] Could not cleanly close ngrok: ${error.message}`); }
+  const stopping = Promise.resolve().then(async () => {
+    tunnelGeneration += 1;
+    const starting = tunnelStartPromise;
+    if (starting) await starting.catch(() => {});
+
+    api?.cancelPendingChanges(reason);
+    api?.clearApprovedActions();
+    if (permissionMode === 'no-ask') {
+      permissionMode = 'ask';
+      await savePreferences().catch((error) => console.error(`[arena-local] Could not persist safe permission mode: ${error.message}`));
+    }
+    const listener = tunnelListener;
+    tunnelListener = null;
+    tunnelUrl = '';
+    if (listener) {
+      try { await listener.close(); }
+      catch (error) { console.error(`[arena-local] Could not cleanly close ngrok: ${error.message}`); }
+    }
+    publishState();
+  });
+  tunnelStopPromise = stopping;
+  try {
+    await stopping;
+  } finally {
+    if (tunnelStopPromise === stopping) {
+      tunnelStopPromise = null;
+      publishState();
+    }
   }
-  publishState();
   return snapshot();
 }
 
@@ -213,6 +265,7 @@ function registerIpcHandlers() {
   ipcMain.handle('arena:list-files', async (_event, relativePath = '.') => listWorkspace(workspaceRoot, relativePath));
   ipcMain.handle('arena:read-file', async (_event, relativePath) => readWorkspaceFile(workspaceRoot, relativePath));
   ipcMain.handle('arena:save-ngrok-token', async (_event, token) => {
+    if (tunnelListener || tunnelStartPromise || tunnelStopPromise) throw new Error('Stop the remote connection before changing ngrok credentials.');
     if (typeof token !== 'string' || token.trim().length < 8 || token.trim().length > 300) throw new Error('Enter a valid ngrok authtoken.');
     ngrokAuthtoken = token.trim();
     savedEncryptedNgrokToken = '';
@@ -223,7 +276,7 @@ function registerIpcHandlers() {
       : 'ngrok authtoken is available until the app closes; OS secure storage was unavailable.' };
   });
   ipcMain.handle('arena:forget-ngrok-token', async () => {
-    if (tunnelListener || permissionMode === 'no-ask') await stopTunnel('ngrok credentials were removed.');
+    if (tunnelListener || tunnelStartPromise || tunnelStopPromise || permissionMode === 'no-ask') await stopTunnel('ngrok credentials were removed.');
     ngrokAuthtoken = '';
     savedEncryptedNgrokToken = '';
     await savePreferences();
@@ -277,7 +330,7 @@ function registerIpcHandlers() {
     return result;
   });
   ipcMain.handle('arena:choose-workspace', async () => {
-    if (tunnelListener) throw new Error('Stop the remote connection before changing the workspace.');
+    if (tunnelListener || tunnelStartPromise || tunnelStopPromise) throw new Error('Stop the remote connection before changing the workspace.');
     const active = api?.getTasks().some((task) => ['running', 'preparing', 'awaiting_approval'].includes(task.status));
     if (active) throw new Error('Wait for active requests to finish before changing the workspace.');
     const result = await dialog.showOpenDialog(mainWindow, {

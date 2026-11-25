@@ -6,6 +6,7 @@ const packageJson = JSON.parse(await readFile(new URL('../package.json', import.
 const releaseWorkflow = await readFile(new URL('../.github/workflows/windows-release.yml', import.meta.url), 'utf8');
 const pagesWorkflow = await readFile(new URL('../.github/workflows/pages.yml', import.meta.url), 'utf8');
 const siteHtml = await readFile(new URL('../site/index.html', import.meta.url), 'utf8');
+const downloadPage = await readFile(new URL('../site/download.html', import.meta.url), 'utf8');
 const siteScript = await readFile(new URL('../site/site.js', import.meta.url), 'utf8');
 const legacyPagesRedirect = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const agentGuide = await readFile(new URL('../site/agents.md', import.meta.url), 'utf8');
@@ -15,7 +16,10 @@ test('Windows installer artifact name matches the release and Pages download lin
   const expectedInstaller = 'Arena-Local-Setup.exe';
   assert.equal(packageJson.build.win.artifactName, 'Arena-Local-Setup.${ext}');
   assert.ok(releaseWorkflow.includes(`release/${expectedInstaller}`));
+  assert.ok(releaseWorkflow.includes(`${expectedInstaller}.sha256`));
+  assert.ok(releaseWorkflow.includes('sha256sum release/Arena-Local-Setup.exe'));
   assert.ok(siteHtml.includes(`releases/latest/download/${expectedInstaller}`));
+  assert.ok(downloadPage.includes('id="checksumLink"'));
   assert.ok(siteScript.includes(`const installerName = '${expectedInstaller}'`));
 });
 
@@ -39,7 +43,10 @@ test('Pages deploys from the main branch and this active branch', () => {
   assert.match(pagesWorkflow, /branches:\s*\n\s+- main/);
   assert.ok(pagesWorkflow.includes("- 'arena/8393bb53-arenaagent2local'"));
   assert.match(pagesWorkflow, /path: site/);
-  assert.ok(pagesWorkflow.includes('test -s site/agents.md'));
+  for (const page of ['index.html', 'features.html', 'getting-started.html', 'safety.html', 'faq.html', 'download.html', 'changelog.html', '404.html', 'agents.md', 'sitemap.xml', 'robots.txt']) {
+    assert.ok(pagesWorkflow.includes(`site/${page}`), `Pages validation should require site/${page}.`);
+  }
+  assert.match(pagesWorkflow, /test -s "\$file"/);
   assert.match(pagesWorkflow, /actions\/deploy-pages@v5/);
 });
 

@@ -1,5 +1,8 @@
 let appState = null;
 let browserPath = '.';
+let fileLoadSequence = 0;
+let currentFileEntries = [];
+let currentFileTruncated = false;
 let toastTimer = null;
 let lastCompletedWrites = '';
 
@@ -17,10 +20,16 @@ const els = {
   ngrokSetup: $('#ngrokSetup'),
   liveConnection: $('#liveConnection'),
   ngrokTokenInput: $('#ngrokTokenInput'),
+  saveNgrokTokenBtn: $('#saveNgrokTokenBtn'),
   ngrokTokenStatus: $('#ngrokTokenStatus'),
   tokenIndicator: $('#tokenIndicator'),
   forgetNgrokTokenBtn: $('#forgetNgrokTokenBtn'),
   startTunnelBtn: $('#startTunnelBtn'),
+  startTunnelLabel: $('#startTunnelLabel'),
+  cancelTunnelBtn: $('#cancelTunnelBtn'),
+  startNote: $('#startNote'),
+  chooseWorkspaceBtn: $('#chooseWorkspaceBtn'),
+  appVersion: $('#appVersion'),
   tunnelUrl: $('#tunnelUrl'),
   pairingHint: $('#pairingHint'),
   permissionMode: $('#permissionMode'),
@@ -33,6 +42,7 @@ const els = {
   approvalCount: $('#approvalCount'),
   activityList: $('#activityList'),
   fileBreadcrumbs: $('#fileBreadcrumbs'),
+  fileFilter: $('#fileFilter'),
   fileList: $('#fileList'),
   fileFoot: $('#fileFoot'),
   fileDialog: $('#fileDialog'),
@@ -62,7 +72,14 @@ function displayName(value) {
 function applyState(state) {
   if (!state) return;
   const wasLive = Boolean(appState?.tunnelActive);
+  const previousWorkspace = appState?.workspaceRoot;
   appState = state;
+  if (previousWorkspace && previousWorkspace !== state.workspaceRoot) {
+    browserPath = '.';
+    currentFileEntries = [];
+    currentFileTruncated = false;
+    if (els.fileFilter) els.fileFilter.value = '';
+  }
   const name = state.workspaceName || displayName(state.workspaceRoot);
   const root = state.workspaceRoot || '—';
   els.workspaceName.textContent = name;
@@ -70,6 +87,7 @@ function applyState(state) {
   els.workspacePath.title = root;
   els.sidebarWorkspaceName.textContent = name;
   els.sidebarWorkspacePath.textContent = root;
+  if (els.appVersion && state.appVersion) els.appVersion.textContent = `v${state.appVersion}`;
   els.permissionMode.value = state.permissionMode || 'ask';
   updatePermissionCopy();
   updateConnectionPanel();
@@ -86,15 +104,32 @@ function applyState(state) {
 
 function updateConnectionPanel() {
   const live = Boolean(appState?.tunnelActive && appState?.tunnelUrl);
+  const starting = Boolean(appState?.tunnelStarting);
+  const stopping = Boolean(appState?.tunnelStopping);
+  const busy = starting || stopping;
   const configured = Boolean(appState?.ngrokTokenConfigured);
   els.connectionPill.classList.toggle('live', live);
-  els.connectionPill.classList.toggle('disconnected', !live);
-  els.connectionLabel.textContent = live ? 'REMOTE LINK ACTIVE' : 'REMOTE LINK OFF';
+  els.connectionPill.classList.toggle('connecting', busy && !live);
+  els.connectionPill.classList.toggle('disconnected', !live && !busy);
+  els.connectionLabel.textContent = live ? 'REMOTE LINK ACTIVE' : starting ? 'CONNECTING…' : stopping ? 'STOPPING…' : 'REMOTE LINK OFF';
   els.navConnectionDot.classList.toggle('live', live);
-  els.bridgeStepMark.textContent = live ? '02 / CONNECTED' : configured ? '02 / READY' : '01 / SET UP';
+  els.navConnectionDot.classList.toggle('connecting', busy && !live);
+  els.bridgeStepMark.textContent = live ? '02 / CONNECTED' : starting ? '02 / CONNECTING' : stopping ? '02 / STOPPING' : configured ? '02 / READY' : '01 / SET UP';
   els.ngrokSetup.hidden = live;
   els.liveConnection.hidden = !live;
-  els.startTunnelBtn.disabled = !configured;
+  els.startTunnelBtn.disabled = !configured || busy || live;
+  els.startTunnelBtn.setAttribute('aria-busy', String(busy));
+  els.startTunnelLabel.textContent = starting ? 'Opening secure link…' : stopping ? 'Stopping…' : 'Start remote connection';
+  els.cancelTunnelBtn.hidden = !starting || stopping;
+  els.startNote.textContent = starting
+    ? 'Creating the temporary HTTPS link. You can cancel the attempt.'
+    : stopping
+      ? 'Closing the temporary link…'
+      : 'The public link is created only when you start it.';
+  els.chooseWorkspaceBtn.disabled = live || busy;
+  els.chooseWorkspaceBtn.title = live || busy ? 'Stop the remote connection before changing folders.' : 'Choose the local folder Arena may access.';
+  els.ngrokTokenInput.disabled = busy;
+  els.saveNgrokTokenBtn.disabled = busy;
   els.tunnelUrl.textContent = appState?.tunnelUrl || '—';
   els.tunnelUrl.title = appState?.tunnelUrl || '';
   els.pairingHint.textContent = configured ? (appState?.pairingTokenHint || '••••••') : '••••••';
@@ -298,14 +333,23 @@ async function runUiAction(action, successMessage) {
 }
 
 async function loadFiles(relativePath = browserPath) {
-  browserPath = relativePath || '.';
+  const targetPath = relativePath || '.';
+  const requestSequence = ++fileLoadSequence;
+  if (targetPath !== browserPath && els.fileFilter) els.fileFilter.value = '';
+  browserPath = targetPath;
+  currentFileEntries = [];
+  currentFileTruncated = false;
   renderBreadcrumbs();
   els.fileList.replaceChildren(makeElement('div', 'loading-row', 'Loading files…'));
+  els.fileFoot.textContent = 'Reading this folder on your computer…';
   try {
-    const data = await window.arenaLocal.listFiles(browserPath);
+    const data = await window.arenaLocal.listFiles(targetPath);
+    if (requestSequence !== fileLoadSequence) return;
     renderFileList(data);
   } catch (error) {
+    if (requestSequence !== fileLoadSequence) return;
     els.fileList.replaceChildren(makeElement('div', 'empty-files', error.message));
+    els.fileFoot.textContent = 'This folder could not be loaded. Check the selected workspace and try again.';
   }
 }
 
@@ -338,10 +382,19 @@ function fileGlyph(name) {
 }
 
 function renderFileList(data) {
+  currentFileEntries = Array.isArray(data.entries) ? data.entries : [];
+  currentFileTruncated = Boolean(data.truncated);
+  const filter = els.fileFilter?.value.trim().toLocaleLowerCase() || '';
+  const entries = filter
+    ? currentFileEntries.filter((entry) => entry.name.toLocaleLowerCase().includes(filter))
+    : currentFileEntries;
   els.fileList.replaceChildren();
-  const entries = data.entries || [];
   if (!entries.length) {
-    els.fileList.append(makeElement('div', 'empty-files', 'This folder is empty.'));
+    const message = currentFileEntries.length
+      ? 'No visible file names match this filter.'
+      : 'This folder has no visible files.';
+    els.fileList.append(makeElement('div', 'empty-files', message));
+    els.fileFoot.textContent = currentFileTruncated ? 'The folder listing is capped at 300 items.' : currentFileEntries.length ? 'Clear the filter to see the full folder listing.' : 'Try another folder or refresh the listing.';
     return;
   }
   for (const entry of entries) {
@@ -357,7 +410,15 @@ function renderFileList(data) {
     if (!row.disabled) row.addEventListener('click', () => directory ? loadFiles(entry.path) : openFile(entry.path));
     els.fileList.append(row);
   }
-  els.fileFoot.textContent = data.truncated ? 'Showing the first 300 items.' : 'Arena only receives files it asks to read in this folder.';
+  if (currentFileTruncated) {
+    els.fileFoot.textContent = filter
+      ? `Showing ${entries.length} matches in the first 300 listed items.`
+      : 'Showing the first 300 items.';
+  } else if (filter) {
+    els.fileFoot.textContent = `Showing ${entries.length} of ${currentFileEntries.length} items in this folder.`;
+  } else {
+    els.fileFoot.textContent = 'Arena only receives files it asks to read in this folder.';
+  }
 }
 
 async function openFile(filePath) {
@@ -389,23 +450,33 @@ async function saveNgrokToken() {
   } catch (error) {
     showToast(error.message, true);
   } finally {
-    button.disabled = false;
+    button.disabled = Boolean(appState?.tunnelStarting || appState?.tunnelStopping || appState?.tunnelActive);
   }
 }
 
 async function startTunnel() {
-  const button = els.startTunnelBtn;
-  button.disabled = true;
-  button.textContent = 'Starting secure link…';
   try {
     const state = await window.arenaLocal.startTunnel();
     applyState(state);
     showToast('Remote link is active. Copy the Arena setup prompt.');
   } catch (error) {
-    showToast(error.message, true);
+    if (!/cancelled/i.test(error.message || '')) showToast(error.message || 'Could not start the remote link.', true);
+  }
+}
+
+async function cancelTunnelStart() {
+  if (!appState?.tunnelStarting) return;
+  els.cancelTunnelBtn.disabled = true;
+  els.cancelTunnelBtn.textContent = 'Cancelling…';
+  try {
+    const state = await window.arenaLocal.stopTunnel();
+    applyState(state);
+    showToast('Connection attempt cancelled.');
+  } catch (error) {
+    showToast(error.message || 'Could not cancel the connection attempt.', true);
   } finally {
-    button.innerHTML = '<span class="start-icon">↗</span><span>Start remote connection</span>';
-    button.disabled = !appState?.ngrokTokenConfigured || appState?.tunnelActive;
+    els.cancelTunnelBtn.disabled = false;
+    els.cancelTunnelBtn.textContent = 'Cancel attempt';
   }
 }
 
@@ -478,8 +549,9 @@ async function changePermission() {
 }
 
 async function chooseWorkspace() {
+  const previousRoot = appState?.workspaceRoot;
   const result = await runUiAction(() => window.arenaLocal.chooseWorkspace());
-  if (result) {
+  if (result && result.workspaceRoot !== previousRoot) {
     browserPath = '.';
     await loadFiles('.');
     showToast('Workspace folder updated.');
@@ -488,6 +560,7 @@ async function chooseWorkspace() {
 
 $('#saveNgrokTokenBtn').addEventListener('click', saveNgrokToken);
 $('#startTunnelBtn').addEventListener('click', startTunnel);
+$('#cancelTunnelBtn').addEventListener('click', cancelTunnelStart);
 $('#stopTunnelBtn').addEventListener('click', stopTunnel);
 $('#copyArenaPromptBtn').addEventListener('click', copyArenaInstructions);
 $('#copyUrlBtn').addEventListener('click', copyTunnelUrl);
@@ -496,15 +569,23 @@ $('#rotatePairingTopBtn').addEventListener('click', rotatePairingKey);
 $('#forgetNgrokTokenBtn').addEventListener('click', forgetNgrokToken);
 $('#chooseWorkspaceBtn').addEventListener('click', chooseWorkspace);
 $('#refreshFilesBtn').addEventListener('click', () => loadFiles(browserPath));
+els.fileFilter.addEventListener('input', () => renderFileList({ entries: currentFileEntries, truncated: currentFileTruncated }));
 $('#permissionMode').addEventListener('change', changePermission);
 $('#closeFileBtn').addEventListener('click', () => els.fileDialog.close());
 
-for (const link of document.querySelectorAll('.nav-item')) {
+const navigationItems = [...document.querySelectorAll('.nav-item')];
+for (const link of navigationItems) {
   link.addEventListener('click', (event) => {
     event.preventDefault();
     const target = link.getAttribute('href');
-    if (target) document.querySelector(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item === link));
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (target) document.querySelector(target)?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+    for (const item of navigationItems) {
+      const active = item === link;
+      item.classList.toggle('active', active);
+      if (active) item.setAttribute('aria-current', 'page');
+      else item.removeAttribute('aria-current');
+    }
   });
 }
 

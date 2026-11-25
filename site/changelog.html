@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a66">
+  <meta name="description" content="Arena Local release notes: desktop connection fixes, file browser improvements, privacy documentation, and the multi-page website refresh.">
+  <meta property="og:title" content="Updates — Arena Local">
+  <meta property="og:description" content="See what changed in Arena Local v0.1.1.">
+  <title>Updates // Arena Local</title>
+  <link rel="canonical" href="https://lumifaye.github.io/ArenaAgent2local/changelog.html">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="outer-frame">
+    <div class="top-strip"><div class="site-width top-strip-inner"><span><i class="status-led" aria-hidden="true"></i> ARENA LOCAL / CHANGELOG</span><span class="top-strip-right">SMALLER BUGS. BETTER SIGNAL.</span></div></div>
+    <div class="site-width">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Arena Local home"><span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-wordmark">ARENA<span>LOCAL</span><small>DESKTOP BRIDGE</small></span></a>
+        <button class="nav-toggle" id="navToggle" type="button" aria-expanded="false" aria-controls="primaryNav"><span>MENU</span><b aria-hidden="true">☰</b></button>
+        <nav class="main-nav" id="primaryNav" aria-label="Main navigation">
+          <a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html">FAQ</a><a href="./changelog.html" aria-current="page">Updates</a><a class="nav-github" href="./download.html">Download <span aria-hidden="true">↓</span></a>
+        </nav>
+      </header>
+      <main id="main" class="subpage-main">
+        <p class="breadcrumb"><a href="./">Home</a><span aria-hidden="true">/</span> Updates</p>
+        <section class="page-hero page-hero-compact" aria-labelledby="page-title">
+          <div><p class="eyebrow">RELEASE NOTES / NOVEMBER 25, 2026</p><h1 id="page-title">A better bridge.<br><span>A clearer map.</span></h1><p>Version 0.1.1 tightens connection behavior, fixes a session-approval race, makes the local file browser easier to use, and turns the product site into a proper field guide.</p><div class="hero-inline-links"><a class="page-button page-button-primary" href="./download.html">Get v0.1.1 <span aria-hidden="true">↓</span></a><a class="quiet-link" href="https://github.com/lumifaye/ArenaAgent2local/releases/tag/v0.1.1" target="_blank" rel="noopener noreferrer">Open the release ↗</a></div></div>
+          <div class="release-badge"><span>ARENA LOCAL</span><strong>0.1.1</strong><small>PATCH RELEASE<br>WINDOWS X64</small></div>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.1 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.1</span><small>NOV 25, 2026</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-fix">FIXED</span><ul><li>Prevent an in-flight “allow exact action for session” approval from returning after the connection's session approvals are cleared.</li><li>Serialize tunnel start and stop transitions, expose connection progress, support cancelling a connection attempt, and close a late tunnel if the user cancelled during startup.</li><li>Ignore stale file-browser responses so slow earlier folder loads cannot overwrite a newer folder view.</li><li>Correct the empty-folder footer and avoid reporting a workspace change when the folder picker was cancelled.</li></ul></div>
+            <div class="change-group"><span class="change-label change-added">ADDED</span><ul><li>Filter visible entries in the desktop workspace browser without sending additional file contents anywhere.</li><li>Show the running app version in the desktop window and improved connecting/stopping states.</li><li>Publish dedicated Features, Getting started, Safety &amp; privacy, FAQ, Download, and Updates pages.</li><li>Attach a SHA-256 checksum sidecar to published Windows installers.</li><li>Add release metadata and checksum discovery to the download page.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">TUNED</span><ul><li>Improve keyboard, mobile navigation, reduced-motion behavior, live status text, and empty/loading states.</li><li>Expand the setup walkthrough, safety boundary explanations, and the release/download guidance.</li></ul></div>
+          </div></article>
+        </section>
+
+        <section class="page-cta"><div><p class="eyebrow">THE PROJECT IS STILL A PROTOTYPE</p><h2>Feedback makes it better.</h2><p>Report reproducible bugs on GitHub, but never include a tunnel URL, bearer key, ngrok token, or private workspace content.</p></div><a class="page-button page-button-primary" href="https://github.com/lumifaye/ArenaAgent2local/issues" target="_blank" rel="noopener noreferrer">Open an issue <span aria-hidden="true">↗</span></a></section>
+      </main>
+      <footer class="site-footer page-footer"><a class="footer-brand" href="./">ARENA<span>LOCAL</span></a><p>Made for local work. Keep the pairing key private.</p><div><a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html">FAQ</a><a href="./agents.md">Agent guide</a><a href="./download.html">Download</a><a href="https://github.com/lumifaye/ArenaAgent2local" target="_blank" rel="noopener noreferrer">Source</a></div><small>© <span id="year">2026</span> Arena Local · An early prototype</small></footer>
+    </div>
+  </div>
+</body>
+</html>

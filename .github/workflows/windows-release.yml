@@ -76,13 +76,18 @@ jobs:
           name: Arena-Local-Setup
           path: release
 
+      - name: Generate installer SHA-256 checksum
+        run: sha256sum release/Arena-Local-Setup.exe | awk '{ print $1 "  Arena-Local-Setup.exe" }' > release/Arena-Local-Setup.exe.sha256
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: Arena Local ${{ github.ref_name }}
           generate_release_notes: true
-          files: release/Arena-Local-Setup.exe
+          files: |
+            release/Arena-Local-Setup.exe
+            release/Arena-Local-Setup.exe.sha256
           fail_on_unmatched_files: true
           overwrite_files: true
         env:
