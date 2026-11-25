@@ -29,9 +29,10 @@ test('Pages deploys from the main branch and this active branch', () => {
   assert.match(pagesWorkflow, /actions\/deploy-pages@v5/);
 });
 
-test('active branch pushes build an installer artifact; version tags publish releases', () => {
+test('active branch pushes build installer artifacts; published releases receive the exe', () => {
   assert.ok(releaseWorkflow.includes("- 'arena/8393bb53-arenaagent2local'"));
   assert.match(releaseWorkflow, /actions\/upload-artifact@v7/);
+  assert.match(releaseWorkflow, /release:\s*\n\s+types:\s*\n\s+- published/);
   assert.match(releaseWorkflow, /if: startsWith\(github\.ref, 'refs\/tags\/'\)/);
   assert.match(releaseWorkflow, /softprops\/action-gh-release@v3/);
 });
