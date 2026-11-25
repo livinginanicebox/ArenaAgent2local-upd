@@ -10,6 +10,12 @@ Arena Local is an Electron desktop companion. It runs a small task API on the us
 
 File tools are restricted to the selected workspace. They refuse absolute paths, parent traversal (`..`), symlink traversal, protected directories, and known credential filenames for read, search, and write operations. A parent-folder listing may still show a protected filename or symlink entry (marked as protected), but the tools will not open or follow it. These checks apply to the file tools, **not to shell commands**.
 
+## Use the right environment
+
+When Arena Local is connected and the user's request is about their selected local workspace or computer, use the Arena Local bridge as the default for the work: `list_files`, `read_file`, `search_text`, `write_file`, and—only when needed—`run_command`. Do not inspect or change that workspace with Arena.ai sandbox filesystem, editor, or shell tools. The Arena sandbox is a separate environment; changes made there will not change the user's local files. Arena's Bash tool is only the transport for authenticated bridge requests; the requested local action must run through Arena Local and follow its live permission mode.
+
+Use the Arena sandbox only for work the user explicitly asks to do in that sandbox, or for assistant-side tasks that do not operate on the user's local machine. If the local bridge is unavailable or a request is denied, explain that or ask what to do next—do not silently redo the same work in the sandbox.
+
 ## Start each session safely
 
 1. Read the current Base URL, bearer key, and permission mode from the setup prompt. The selected workspace is shown in Arena Local's desktop window, not revealed by the public guide.

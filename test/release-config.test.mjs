@@ -29,9 +29,12 @@ test('copied Arena prompt fetches the public guide without exposing the pairing 
   assert.ok(desktopMain.includes("curl -fsSL '${guideUrl}'"));
   assert.ok(desktopMain.includes('Never send the bearer key to the guide URL.'));
   assert.ok(siteHtml.includes('href="./agents.md"'));
-  for (const section of ['API workflow', 'Privacy and safety', 'Quality-of-life tips']) {
+  for (const section of ['Use the right environment', 'API workflow', 'Privacy and safety', 'Quality-of-life tips']) {
     assert.ok(agentGuide.includes(`## ${section}`), `Agent guide should document ${section}.`);
   }
+  assert.match(agentGuide, /When Arena Local is connected and the user's request is about their selected local workspace or computer, use the Arena Local bridge as the default/);
+  assert.match(agentGuide, /Do not inspect or change that workspace with Arena\.ai sandbox filesystem, editor, or shell tools/);
+  assert.match(agentGuide, /do not silently redo the same work in the sandbox/);
 });
 
 test('legacy branch-based Pages root redirects to the styled product page', () => {
