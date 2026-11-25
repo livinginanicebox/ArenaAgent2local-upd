@@ -76,10 +76,11 @@ test('writes are workspace-relative and search skips protected directories', asy
 
 test('full-computer access permits absolute paths outside the workspace when explicitly enabled', async (t) => {
   const { parent, root } = await makeWorkspace(t);
-  const privateDirectory = path.join(parent, 'private');
+  const privateDirectoryInput = path.join(parent, 'private');
+  await fs.mkdir(privateDirectoryInput);
+  const privateDirectory = await fs.realpath(privateDirectoryInput);
   const privateFile = path.join(privateDirectory, '.env');
   const newFile = path.join(privateDirectory, 'notes.txt');
-  await fs.mkdir(privateDirectory);
   await fs.writeFile(privateFile, 'TEST_TOKEN=fixture-only\n');
 
   await assert.rejects(readForAgent(root, privateFile), /Absolute paths/i);
