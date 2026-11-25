@@ -26,12 +26,12 @@ test('Pages deploys from the main branch and this active branch', () => {
   assert.match(pagesWorkflow, /branches:\s*\n\s+- main/);
   assert.ok(pagesWorkflow.includes("- 'arena/8393bb53-arenaagent2local'"));
   assert.match(pagesWorkflow, /path: site/);
-  assert.match(pagesWorkflow, /actions\/deploy-pages@v4/);
+  assert.match(pagesWorkflow, /actions\/deploy-pages@v5/);
 });
 
 test('active branch pushes build an installer artifact; version tags publish releases', () => {
   assert.ok(releaseWorkflow.includes("- 'arena/8393bb53-arenaagent2local'"));
-  assert.match(releaseWorkflow, /actions\/upload-artifact@v4/);
+  assert.match(releaseWorkflow, /actions\/upload-artifact@v7/);
   assert.match(releaseWorkflow, /if: startsWith\(github\.ref, 'refs\/tags\/'\)/);
-  assert.match(releaseWorkflow, /softprops\/action-gh-release@v2/);
+  assert.match(releaseWorkflow, /softprops\/action-gh-release@v3/);
 });
