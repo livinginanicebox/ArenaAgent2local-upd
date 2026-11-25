@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { promises as fs } from 'node:fs';
 import { createRemoteApi } from '../src/remote-api.mjs';
 import { listWorkspace, readWorkspaceFile, resolveWorkspaceRoot } from '../src/workspace.mjs';
+import { assertTrustedUiEvent as assertTrustedDesktopUiEvent } from './trusted-ui.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UI_ENTRY_PATH = path.resolve(HERE, '..', 'public', 'index.html');
@@ -42,18 +43,7 @@ function createPairingToken() {
 }
 
 function assertTrustedUiEvent(event) {
-  if (!mainWindow || event?.sender !== mainWindow.webContents || !event?.senderFrame?.isMainFrame) {
-    throw new Error('This action is available only from the Arena Local desktop window.');
-  }
-  let senderPath;
-  try {
-    const senderUrl = new URL(event.senderFrame.url);
-    if (senderUrl.protocol !== 'file:') throw new Error('Unexpected renderer origin.');
-    senderPath = path.resolve(fileURLToPath(senderUrl));
-  } catch {
-    throw new Error('This action is available only from the trusted Arena Local interface.');
-  }
-  if (senderPath !== UI_ENTRY_PATH) throw new Error('This action is available only from the trusted Arena Local interface.');
+  return assertTrustedDesktopUiEvent(event, mainWindow, UI_ENTRY_PATH);
 }
 
 function clearFullComputerAccess() {
@@ -424,10 +414,20 @@ async function stopTunnel(reason = 'Remote connection stopped on this computer.'
 }
 
 function registerIpcHandlers() {
-  ipcMain.handle('arena:get-state', () => snapshot());
-  ipcMain.handle('arena:list-files', async (_event, relativePath = '.') => listWorkspace(workspaceRoot, relativePath));
-  ipcMain.handle('arena:read-file', async (_event, relativePath) => readWorkspaceFile(workspaceRoot, relativePath));
-  ipcMain.handle('arena:save-ngrok-token', async (_event, token) => {
+  ipcMain.handle('arena:get-state', (event) => {
+    assertTrustedUiEvent(event);
+    return snapshot();
+  });
+  ipcMain.handle('arena:list-files', async (event, relativePath = '.') => {
+    assertTrustedUiEvent(event);
+    return listWorkspace(workspaceRoot, relativePath);
+  });
+  ipcMain.handle('arena:read-file', async (event, relativePath) => {
+    assertTrustedUiEvent(event);
+    return readWorkspaceFile(workspaceRoot, relativePath);
+  });
+  ipcMain.handle('arena:save-ngrok-token', async (event, token) => {
+    assertTrustedUiEvent(event);
     if (tunnelListener || tunnelStartPromise || tunnelStopPromise) throw new Error('Stop the remote connection before changing ngrok credentials.');
     if (typeof token !== 'string' || token.trim().length < 8 || token.trim().length > 300) throw new Error('Enter a valid ngrok authtoken.');
     ngrokAuthtoken = token.trim();
@@ -438,7 +438,8 @@ function registerIpcHandlers() {
       ? 'ngrok authtoken stored using this computer’s secure storage.'
       : 'ngrok authtoken is available until the app closes; OS secure storage was unavailable.' };
   });
-  ipcMain.handle('arena:forget-ngrok-token', async () => {
+  ipcMain.handle('arena:forget-ngrok-token', async (event) => {
+    assertTrustedUiEvent(event);
     if (tunnelListener || tunnelStartPromise || tunnelStopPromise || permissionMode === 'no-ask' || fullComputerAccess) await stopTunnel('ngrok credentials were removed.');
     ngrokAuthtoken = '';
     savedEncryptedNgrokToken = '';
@@ -469,11 +470,13 @@ function registerIpcHandlers() {
     publishState();
     return { rotated: true, hint: pairingToken.slice(-6) };
   });
-  ipcMain.handle('arena:copy-instructions', () => {
+  ipcMain.handle('arena:copy-instructions', (event) => {
+    assertTrustedUiEvent(event);
     clipboard.writeText(arenaInstructions());
     return { copied: true };
   });
-  ipcMain.handle('arena:copy-tunnel-url', () => {
+  ipcMain.handle('arena:copy-tunnel-url', (event) => {
+    assertTrustedUiEvent(event);
     if (!tunnelUrl) throw new Error('Start the remote connection before copying its URL.');
     clipboard.writeText(tunnelUrl);
     return { copied: true };
@@ -599,12 +602,14 @@ function registerIpcHandlers() {
     }
     return snapshot();
   });
-  ipcMain.handle('arena:approve-task', async (_event, taskId, decision) => {
+  ipcMain.handle('arena:approve-task', async (event, taskId, decision) => {
+    assertTrustedUiEvent(event);
     const result = await api.approveTask(taskId, decision);
     publishState();
     return result;
   });
-  ipcMain.handle('arena:choose-workspace', async () => {
+  ipcMain.handle('arena:choose-workspace', async (event) => {
+    assertTrustedUiEvent(event);
     if (tunnelListener || tunnelStartPromise || tunnelStopPromise) throw new Error('Stop the remote connection before changing the workspace.');
     const active = api?.getTasks().some((task) => ['running', 'preparing', 'awaiting_approval'].includes(task.status));
     if (active) throw new Error('Wait for active requests to finish before changing the workspace.');
@@ -630,7 +635,7 @@ function createWindow() {
     height: 940,
     minWidth: 960,
     minHeight: 700,
-    backgroundColor: '#0a0e14',
+    backgroundColor: '#07101f',
     title: 'Arena Local',
     show: false,
     autoHideMenuBar: true,

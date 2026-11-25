@@ -12,6 +12,7 @@ const legacyPagesRedirect = await readFile(new URL('../index.html', import.meta.
 const agentGuide = (await readFile(new URL('../site/agents.md', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 const desktopMain = await readFile(new URL('../desktop/main.mjs', import.meta.url), 'utf8');
 const desktopUi = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+const desktopTheme = await readFile(new URL('../public/desktop-theme.css', import.meta.url), 'utf8');
 const desktopAppJs = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
 const desktopPreload = await readFile(new URL('../desktop/preload.cjs', import.meta.url), 'utf8');
 const remoteApi = await readFile(new URL('../src/remote-api.mjs', import.meta.url), 'utf8');
@@ -25,6 +26,14 @@ test('Windows installer artifact name matches the release and Pages download lin
   assert.ok(siteHtml.includes(`releases/latest/download/${expectedInstaller}`));
   assert.ok(downloadPage.includes('id="checksumLink"'));
   assert.ok(siteScript.includes(`const installerName = '${expectedInstaller}'`));
+});
+
+test('desktop control center uses the website electric-blue retro theme', () => {
+  assert.ok(desktopUi.includes('href="./desktop-theme.css"'));
+  assert.match(desktopTheme, /--electric:\s*#36c7ff/i);
+  assert.match(desktopTheme, /font-family:\s*Tahoma, Verdana/);
+  assert.match(desktopTheme, /linear-gradient\(180deg, #4fb8ed/);
+  assert.match(desktopTheme, /@media \(max-width: 680px\)/);
 });
 
 test('copied Arena prompt fetches the public guide without exposing the pairing key', () => {
