@@ -39,7 +39,24 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: npm test
+        shell: pwsh
+        run: |
+          $testOutput = & npm test 2>&1
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) {
+            $inFailure = $false
+            foreach ($entry in $testOutput) {
+              $line = [string]$entry
+              if ($line -match '^not ok ') { $inFailure = $true }
+              if ($inFailure -and $line -match '^not ok |^  error:|^  code:|^  name:|^  stack:|^  location:|^  failureType:|^  actual:|^  expected:|^    (The expression|Expected|AssertionError|Error:)') {
+                $escaped = $line.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A').Replace(':', '%3A').Replace(',', '%2C')
+                Write-Output "::error title=Node test failure::$escaped"
+              }
+              if ($inFailure -and $line.Trim() -eq '...') { $inFailure = $false }
+            }
+          }
+          exit $testExitCode
 
       - name: Build Windows x64 installer
         run: npm run dist -- --win nsis --x64 --publish never
