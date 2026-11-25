@@ -67,6 +67,7 @@ Read actions run automatically within the chosen workspace. `write_file` and `ru
 
 - **Ask before changes** is the default. The desktop UI shows the complete proposed file diff or exact shell command. You can approve once, allow that exact action for the current connection, or deny it. Before an approved write is applied, the app checks that the file has not changed since the diff was shown; if it has, it refuses the stale approval and requires a fresh review.
 - **Read only** blocks file writes and terminal commands. Switching modes denies pending requests and clears session approvals.
+- **No approval — VERY DANGEROUS** is available behind two native warning confirmations. It auto-runs remote file writes and shell commands. Shell commands have the signed-in user's OS permissions and can reach outside the workspace. The no-ask mode is not persisted; it resets when you stop the tunnel, rotate the pairing key, choose another folder, or close the app. The desktop UI keeps a prominent danger banner and labels these actions as auto-approved.
 - Workspace file operations reject absolute paths, `..`, and symbolic links. Common credential files and sensitive/build directories are blocked from file tools.
 - The pairing key is an ephemeral 256-bit bearer capability. Keep the copied Arena setup prompt private; anyone with the key can read allowed workspace files. Rotate the key or stop the tunnel to revoke it.
 - File contents requested by Arena travel through the ngrok HTTPS tunnel and are returned to Arena's Bash tool. Do not expose a workspace whose contents you do not want to send to Arena.
@@ -81,4 +82,4 @@ This is an early prototype, not a security boundary for untrusted users or a rep
 npm test
 ```
 
-The tests exercise bearer authentication, request idempotency, workspace boundaries, read-only mode, and explicit mutation approvals without requiring Electron or an ngrok account.
+The tests exercise bearer authentication, request idempotency, workspace boundaries, read-only and no-ask modes, stale-diff refusal, and explicit mutation approvals without requiring Electron or an ngrok account.

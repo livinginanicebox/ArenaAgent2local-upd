@@ -120,6 +120,24 @@ test('writes are visible in the desktop queue and run only after approval', asyn
   assert.equal(await fs.readFile(path.join(fixture.workspaceRoot, 'notes.txt'), 'utf8'), 'approved from desktop\n');
 });
 
+test('shell commands wait for desktop approval in Ask mode', async (t) => {
+  const fixture = await makeFixture(t);
+  const submitted = await postTask(fixture, {
+    requestId: 'ask-command-0001',
+    action: 'run_command',
+    args: { command: 'echo held-for-approval' },
+  });
+  const queued = await submitted.json();
+  assert.equal(queued.status, 'awaiting_approval');
+  assert.equal(queued.autoApproved, false);
+  const desktopTask = fixture.api.getTasks().find((task) => task.taskId === queued.taskId);
+  assert.equal(desktopTask.args.command, 'echo held-for-approval');
+
+  await fixture.api.approveTask(queued.taskId, 'approve');
+  const completed = await waitForTask(fixture, queued.taskId, (task) => task.status === 'completed');
+  assert.match(completed.result.stdout, /held-for-approval/i);
+});
+
 test('approval is refused if a file changes after the desktop diff was reviewed', async (t) => {
   const fixture = await makeFixture(t);
   const filePath = path.join(fixture.workspaceRoot, 'README.md');
@@ -138,6 +156,29 @@ test('approval is refused if a file changes after the desktop diff was reviewed'
   assert.equal(await fs.readFile(filePath, 'utf8'), '# Changed by user while approval was pending\n');
 });
 
+test('no-ask mode auto-runs writes and commands and marks them as dangerous', async (t) => {
+  const fixture = await makeFixture(t, 'no-ask');
+  const writeResponse = await postTask(fixture, {
+    requestId: 'noask-write-0001', action: 'write_file', args: { path: 'automatic.txt', content: 'written without a prompt' },
+  });
+  const writeTask = await writeResponse.json();
+  assert.notEqual(writeTask.status, 'awaiting_approval');
+  assert.equal(writeTask.autoApproved, true);
+  const written = await waitForTask(fixture, writeTask.taskId, (task) => task.status === 'completed');
+  assert.equal(written.autoApproved, true);
+  assert.equal(await fs.readFile(path.join(fixture.workspaceRoot, 'automatic.txt'), 'utf8'), 'written without a prompt');
+
+  const commandResponse = await postTask(fixture, {
+    requestId: 'noask-command-01', action: 'run_command', args: { command: 'echo no-ask-test' },
+  });
+  const commandTask = await commandResponse.json();
+  assert.equal(commandTask.autoApproved, true);
+  const commandResult = await waitForTask(fixture, commandTask.taskId, (task) => task.status === 'completed');
+  assert.equal(commandResult.autoApproved, true);
+  assert.match(commandResult.result.stdout, /no-ask-test/i);
+  assert.equal(fixture.api.getTasks().some((task) => task.status === 'awaiting_approval'), false);
+});
+
 test('read-only mode blocks mutations; exact-session approval is scoped to the exact action', async (t) => {
   const fixture = await makeFixture(t, 'read-only');
   const blocked = await postTask(fixture, {
@@ -146,6 +187,13 @@ test('read-only mode blocks mutations; exact-session approval is scoped to the e
   const blockedTask = await blocked.json();
   assert.equal(blockedTask.status, 'denied');
   assert.equal(await fs.access(path.join(fixture.workspaceRoot, 'blocked.txt')).then(() => true, () => false), false);
+
+  const blockedCommandResponse = await postTask(fixture, {
+    requestId: 'readonly-command-01', action: 'run_command', args: { command: 'echo must-not-run' },
+  });
+  const blockedCommand = await blockedCommandResponse.json();
+  assert.equal(blockedCommand.status, 'denied');
+  assert.equal(blockedCommand.autoApproved, false);
 
   fixture.setMode('ask');
   const firstResponse = await postTask(fixture, {

@@ -134,6 +134,7 @@ function safeDesktopTask(task) {
     message: task.message,
     resultSummary: task.resultSummary,
     error: task.error,
+    autoApproved: task.autoApproved === true,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   };
@@ -157,6 +158,7 @@ function arenaTaskResponse(task) {
     requestId: task.requestId,
     action: task.action,
     status: task.status,
+    autoApproved: task.autoApproved === true,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   };
@@ -221,9 +223,16 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
       const result = CHANGE_TOOLS.has(task.action)
         ? await executeMutationTool(root, task.action, task.args, { expectedWriteState })
         : await executeReadTool(root, task.action, task.args);
-      setStatus(task, 'completed', { result, resultSummary: summarizeResult(task.action, result), message: undefined, error: undefined });
+      const summary = summarizeResult(task.action, result);
+      setStatus(task, 'completed', {
+        result,
+        resultSummary: task.autoApproved ? `AUTO-APPROVED · ${summary}` : summary,
+        message: undefined,
+        error: undefined,
+      });
     } catch (error) {
-      setStatus(task, 'error', { error: error.message || 'Local action failed.', resultSummary: error.message || 'Local action failed.' });
+      const message = error.message || 'Local action failed.';
+      setStatus(task, 'error', { error: message, resultSummary: task.autoApproved ? `AUTO-APPROVED · ${message}` : message });
     }
   }
 
@@ -287,6 +296,7 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
       status: CHANGE_TOOLS.has(request.action) ? 'preparing' : 'running',
       result: null,
       resultSummary: '',
+      autoApproved: false,
       error: undefined,
       message: undefined,
       preview: null,
@@ -305,6 +315,13 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
 
     if (getPermissionMode() === 'read-only') {
       denyTask(task, 'Blocked by Read only mode.');
+      return task;
+    }
+
+    if (getPermissionMode() === 'no-ask') {
+      task.autoApproved = true;
+      setStatus(task, 'running', { message: 'Auto-approved without a prompt in Very dangerous no-ask mode.' });
+      void executeTask(task);
       return task;
     }
 

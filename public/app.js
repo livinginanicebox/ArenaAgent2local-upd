@@ -24,8 +24,11 @@ const els = {
   tunnelUrl: $('#tunnelUrl'),
   pairingHint: $('#pairingHint'),
   permissionMode: $('#permissionMode'),
+  sidebarSecurityCopy: $('#sidebarSecurityCopy'),
+  bridgeDisclaimerCopy: $('#bridgeDisclaimerCopy'),
   permissionDescription: $('#permissionDescription'),
   changeRule: $('#changeRule'),
+  dangerModeBanner: $('#dangerModeBanner'),
   approvalQueue: $('#approvalQueue'),
   approvalCount: $('#approvalCount'),
   activityList: $('#activityList'),
@@ -106,12 +109,28 @@ function updateConnectionPanel() {
 }
 
 function updatePermissionCopy() {
-  const readOnly = els.permissionMode.value === 'read-only';
-  els.permissionDescription.textContent = readOnly
-    ? 'Arena can inspect files, but writes and terminal commands are blocked.'
-    : 'Reads are available. Writes and commands pause for your desktop approval.';
-  els.changeRule.textContent = readOnly ? 'BLOCK' : 'ASK';
+  const mode = els.permissionMode.value;
+  const readOnly = mode === 'read-only';
+  const noAsk = mode === 'no-ask';
+  els.sidebarSecurityCopy.textContent = noAsk
+    ? 'VERY DANGEROUS: Arena can write files and run shell commands without approval.'
+    : readOnly
+      ? 'File reads are available. Writes and terminal commands are blocked.'
+      : 'Arena can only request scoped actions. File writes and shell commands wait for you here.';
+  els.bridgeDisclaimerCopy.textContent = noAsk
+    ? 'VERY DANGEROUS: writes and shell commands execute immediately without desktop approval. Stop the link, rotate the key, or switch to Ask or Read only to disable this mode.'
+    : readOnly
+      ? 'The bearer key lets Arena read files in this workspace. File writes and shell commands are blocked in Read only mode.'
+      : 'The bearer key lets Arena read files in this workspace. Writes and shell commands pause for desktop approval unless you enable VERY DANGEROUS no-ask mode.';
+  els.permissionDescription.textContent = noAsk
+    ? 'VERY DANGEROUS: every remote write and shell command runs immediately without approval.'
+    : readOnly
+      ? 'Arena can inspect files, but writes and terminal commands are blocked.'
+      : 'Reads are available. Writes and commands pause for your desktop approval.';
+  els.changeRule.textContent = noAsk ? 'AUTO' : readOnly ? 'BLOCK' : 'ASK';
   els.changeRule.classList.toggle('blocked-state', readOnly);
+  els.changeRule.classList.toggle('no-ask-state', noAsk);
+  els.dangerModeBanner.hidden = !noAsk;
 }
 
 function taskTitle(task) {
@@ -151,7 +170,12 @@ function renderApprovals() {
     empty.append(makeElement('span', 'empty-orbit', '◇'));
     const copy = makeElement('div');
     copy.append(makeElement('strong', '', 'Nothing needs approval'));
-    copy.append(makeElement('p', '', 'When Arena requests a file write or terminal command, review it here first.'));
+    const emptyMessage = appState?.permissionMode === 'no-ask'
+      ? 'No actions pause here. File writes and shell commands run without a prompt.'
+      : appState?.permissionMode === 'read-only'
+        ? 'File writes and shell commands are blocked in Read only mode.'
+        : 'When Arena requests a file write or terminal command, review it here first.';
+    copy.append(makeElement('p', '', emptyMessage));
     empty.append(copy);
     els.approvalQueue.append(empty);
     return;
@@ -245,15 +269,18 @@ function renderActivity() {
     return;
   }
   for (const task of tasks) {
-    const row = makeElement('div', 'activity-row');
+    const row = makeElement('div', `activity-row${task.autoApproved ? ' auto-approved' : ''}`);
     const change = task.action === 'write_file' || task.action === 'run_command';
     row.append(makeElement('span', `activity-action-icon${change ? ' change' : ''}`, task.action === 'run_command' ? '$' : change ? '✎' : '⌕'));
     const main = makeElement('div', 'activity-main');
     main.append(makeElement('strong', '', taskTitle(task)));
-    main.append(makeElement('small', '', task.resultSummary || requestStatusLabel(task.status)));
+    const activitySummary = task.autoApproved
+      ? task.status === 'running' ? 'AUTO-APPROVED · running without a prompt' : task.resultSummary || 'AUTO-APPROVED · no prompt was shown'
+      : task.resultSummary || requestStatusLabel(task.status);
+    main.append(makeElement('small', '', activitySummary));
     row.append(main);
     const isError = ['denied', 'expired', 'cancelled', 'error'].includes(task.status);
-    row.append(makeElement('span', `activity-state${task.status === 'awaiting_approval' || task.status === 'preparing' ? ' waiting' : isError ? ' error' : ''}`));
+    row.append(makeElement('span', `activity-state${task.autoApproved ? ' automatic' : task.status === 'awaiting_approval' || task.status === 'preparing' ? ' waiting' : isError ? ' error' : ''}`));
     els.activityList.append(row);
   }
 }
@@ -431,8 +458,18 @@ async function changePermission() {
   const mode = els.permissionMode.value;
   updatePermissionCopy();
   try {
-    applyState(await window.arenaLocal.setPermissionMode(mode));
-    showToast(mode === 'read-only' ? 'Read only mode enabled; pending changes were denied.' : 'Changes now require desktop approval.');
+    const state = await window.arenaLocal.setPermissionMode(mode);
+    applyState(state);
+    if (state.permissionMode !== mode) {
+      const currentMode = state.permissionMode === 'read-only' ? 'Read only mode' : 'Ask mode';
+      showToast(`No-ask mode was not enabled. ${currentMode} remains active.`);
+    } else if (mode === 'no-ask') {
+      showToast('VERY DANGEROUS: changes will run without approval until you stop the link, rotate the key, choose another folder, or close the app.', true);
+    } else if (mode === 'read-only') {
+      showToast('Read only mode enabled; pending changes were denied.');
+    } else {
+      showToast('Changes now require desktop approval.');
+    }
   } catch (error) {
     els.permissionMode.value = appState?.permissionMode || 'ask';
     updatePermissionCopy();

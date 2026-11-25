@@ -68,7 +68,7 @@ async function savePreferences() {
       savedEncryptedNgrokToken = '';
     }
   }
-  const config = { workspaceRoot, permissionMode, encryptedNgrokToken: savedEncryptedNgrokToken };
+  const config = { workspaceRoot, permissionMode: permissionMode === 'no-ask' ? 'ask' : permissionMode, encryptedNgrokToken: savedEncryptedNgrokToken };
   const directory = path.dirname(userConfigPath);
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const temp = `${userConfigPath}.${crypto.randomBytes(5).toString('hex')}.tmp`;
@@ -114,7 +114,35 @@ function publishState() {
 
 function arenaInstructions() {
   if (!tunnelUrl) throw new Error('Start the ngrok connection before copying the Arena instructions.');
-  return `Use Arena Local to work in my selected local workspace. Use your bash tool and curl to call this bridge; do not try to reach my computer by any other route.\n\nBase URL: ${tunnelUrl}\nAuthorization: Bearer ${pairingToken}\n\nAllowed actions are list_files, read_file, search_text, write_file, and run_command. Submit a task with POST /v1/tasks using JSON {"requestId":"a-unique-id-8-or-more-chars","action":"read_file","args":{"path":"README.md"}} and the Authorization: Bearer header. Poll GET /v1/tasks/{taskId} until status is completed, denied, expired, cancelled, or error. Completed responses contain result. Use a new requestId for each distinct action and reuse it only to retry the same request. Paths must be relative to the selected workspace. Never read credentials or try to escape the workspace. File writes and terminal commands pause for approval in my desktop app; wait for approval rather than retrying or bypassing it. Shell commands run with my normal OS permissions, so request only commands required for my task. Do not print, reuse, or share the bearer token.\n\nExample read request:\ncurl -sS -X POST '${tunnelUrl}/v1/tasks' -H 'Authorization: Bearer ${pairingToken}' -H 'Content-Type: application/json' --data '{"requestId":"readme-demo-01","action":"read_file","args":{"path":"README.md"}}'`;
+  const writeWarning = permissionMode === 'no-ask'
+    ? 'WARNING: VERY DANGEROUS NO-ASK MODE IS CURRENTLY ACTIVE. File writes and terminal commands execute immediately without local approval. This mode resets when the user stops the link, rotates the pairing key, changes workspace, or closes the app. Request only actions strictly required by the user and never use destructive commands.'
+    : 'Current mode: file writes and terminal commands pause for desktop approval; wait for approval rather than retrying or bypassing it. VERY DANGEROUS no-ask mode is available in the desktop app and would run them immediately without approval.';
+  return `Use Arena Local to work in my selected local workspace. Use your bash tool and curl to call this bridge; do not try to reach my computer by any other route.\n\nBase URL: ${tunnelUrl}\nAuthorization: Bearer ${pairingToken}\n\nAllowed actions are list_files, read_file, search_text, write_file, and run_command. Submit a task with POST /v1/tasks using JSON {"requestId":"a-unique-id-8-or-more-chars","action":"read_file","args":{"path":"README.md"}} and the Authorization: Bearer header. Poll GET /v1/tasks/{taskId} until status is completed, denied, expired, cancelled, or error. Completed responses contain result. Use a new requestId for each distinct action and reuse it only to retry the same request. Paths must be relative to the selected workspace. Never read credentials or try to escape the workspace. ${writeWarning} Shell commands run with my normal OS permissions and can reach outside the workspace, so request only commands strictly required for my task. Do not print, reuse, or share the bearer token.\n\nExample read request:\ncurl -sS -X POST '${tunnelUrl}/v1/tasks' -H 'Authorization: Bearer ${pairingToken}' -H 'Content-Type: application/json' --data '{"requestId":"readme-demo-01","action":"read_file","args":{"path":"README.md"}}'`;
+}
+
+async function confirmNoAskMode() {
+  const first = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'VERY DANGEROUS: no-ask mode',
+    message: 'Remote file writes and terminal commands will run without approval.',
+    detail: 'Arena can overwrite workspace files and run shell commands with your normal OS-user privileges. Shell commands can access files outside the selected folder. Anyone holding the pairing key can trigger these actions until you stop the link or rotate the key. Data loss is possible.',
+    buttons: ['Cancel', 'Continue to final confirmation'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  if (first.response !== 1) return false;
+  const final = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'Final confirmation',
+    message: 'Enable no-ask mode?',
+    detail: 'This mode remains active only until you stop the ngrok connection, rotate the pairing key, choose a different workspace, or close Arena Local. The app will not pause for individual writes or shell commands.',
+    buttons: ['Keep Ask mode', 'Enable no-ask'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  return final.response === 1;
 }
 
 async function startLocalApi() {
@@ -164,6 +192,10 @@ async function startTunnel() {
 async function stopTunnel(reason = 'Remote connection stopped on this computer.') {
   api?.cancelPendingChanges(reason);
   api?.clearApprovedActions();
+  if (permissionMode === 'no-ask') {
+    permissionMode = 'ask';
+    await savePreferences().catch((error) => console.error(`[arena-local] Could not persist safe permission mode: ${error.message}`));
+  }
   const listener = tunnelListener;
   tunnelListener = null;
   tunnelUrl = '';
@@ -190,7 +222,7 @@ function registerIpcHandlers() {
       : 'ngrok authtoken is available until the app closes; OS secure storage was unavailable.' };
   });
   ipcMain.handle('arena:forget-ngrok-token', async () => {
-    if (tunnelListener) await stopTunnel('ngrok credentials were removed.');
+    if (tunnelListener || permissionMode === 'no-ask') await stopTunnel('ngrok credentials were removed.');
     ngrokAuthtoken = '';
     savedEncryptedNgrokToken = '';
     await savePreferences();
@@ -199,10 +231,14 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('arena:start-tunnel', () => startTunnel());
   ipcMain.handle('arena:stop-tunnel', () => stopTunnel());
-  ipcMain.handle('arena:rotate-pairing-token', () => {
+  ipcMain.handle('arena:rotate-pairing-token', async () => {
     pairingToken = createPairingToken();
     api?.cancelPendingChanges('Pairing token rotated by the user.');
     api?.clearApprovedActions();
+    if (permissionMode === 'no-ask') {
+      permissionMode = 'ask';
+      await savePreferences();
+    }
     publishState();
     return { rotated: true, hint: pairingToken.slice(-6) };
   });
@@ -216,12 +252,20 @@ function registerIpcHandlers() {
     return { copied: true };
   });
   ipcMain.handle('arena:set-permission-mode', async (_event, mode) => {
-    if (mode !== 'ask' && mode !== 'read-only') throw new Error('Unsupported permission mode.');
+    if (!['ask', 'read-only', 'no-ask'].includes(mode)) throw new Error('Unsupported permission mode.');
+    if (mode === 'no-ask' && permissionMode !== 'no-ask' && !(await confirmNoAskMode())) return snapshot();
     if (permissionMode !== mode) {
+      const previousMode = permissionMode;
       permissionMode = mode;
       api?.cancelPendingChanges(mode === 'read-only' ? 'Blocked because Read only mode was enabled.' : 'Permission mode changed.');
       api?.clearApprovedActions();
-      await savePreferences();
+      try {
+        await savePreferences();
+      } catch (error) {
+        permissionMode = previousMode;
+        publishState();
+        throw error;
+      }
       publishState();
     }
     return snapshot();
@@ -243,6 +287,7 @@ function registerIpcHandlers() {
     if (result.canceled || !result.filePaths[0]) return snapshot();
     workspaceRoot = await resolveWorkspaceRoot(result.filePaths[0]);
     api?.clearApprovedActions();
+    if (permissionMode === 'no-ask') permissionMode = 'ask';
     await savePreferences();
     publishState();
     return snapshot();
