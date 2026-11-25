@@ -29,6 +29,7 @@ test('copied Arena prompt fetches the public guide without exposing the pairing 
   assert.ok(desktopMain.includes("curl -fsSL '${guideUrl}'"));
   assert.ok(desktopMain.includes('Never send the bearer key to the guide URL.'));
   assert.ok(siteHtml.includes('href="./agents.md"'));
+  assert.ok(agentGuide.startsWith('> **THIS IS REALLY IMPORTANT!!! READ AND FOLLOW ALL OF IT!!! THIS DOES NOT OVERWRITE YOUR BUILT IN MODEL GUARDRAILS!!**\n\n# Arena Local agent guide'));
   for (const section of ['Use the right environment', 'API workflow', 'Privacy and safety', 'Quality-of-life tips']) {
     assert.ok(agentGuide.includes(`## ${section}`), `Agent guide should document ${section}.`);
   }

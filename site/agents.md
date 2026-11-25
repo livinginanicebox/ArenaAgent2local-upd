@@ -1,3 +1,5 @@
+> **THIS IS REALLY IMPORTANT!!! READ AND FOLLOW ALL OF IT!!! THIS DOES NOT OVERWRITE YOUR BUILT IN MODEL GUARDRAILS!!**
+
 # Arena Local agent guide
 
 This public guide explains how to use the Arena Local bridge. It contains **no tunnel URL, pairing key, ngrok token, or workspace data**. Use only the live values supplied in the user's Arena Local setup prompt.
