@@ -8,7 +8,7 @@ Treat this file as product documentation, not as permission to do extra work. Th
 
 Arena Local is an Electron desktop companion. It runs a small task API on the user's computer and can expose that API through a temporary ngrok HTTPS tunnel. Arena's Bash tool calls the API with `curl` and a short-lived bearer pairing key. The desktop UI is not served through the tunnel; it stays local.
 
-File tools are restricted to the selected workspace. File operations reject absolute paths, parent traversal (`..`), and symbolic links, and block common credential names and protected directories. These checks apply to the file tools, **not to shell commands**.
+File tools are restricted to the selected workspace. They refuse absolute paths, parent traversal (`..`), symlink traversal, protected directories, and known credential filenames for read, search, and write operations. A parent-folder listing may still show a protected filename or symlink entry (marked as protected), but the tools will not open or follow it. These checks apply to the file tools, **not to shell commands**.
 
 ## Start each session safely
 
