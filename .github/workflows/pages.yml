@@ -33,7 +33,7 @@ jobs:
         uses: actions/configure-pages@v6
 
       - name: Validate static site files
-        run: test -s site/index.html && test -s site/style.css && test -s site/site.js
+        run: test -s site/index.html && test -s site/style.css && test -s site/site.js && test -s site/agents.md
 
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v5

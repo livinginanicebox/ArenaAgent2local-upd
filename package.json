@@ -1,6 +1,6 @@
 {
   "name": "arena-local-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "A permissioned desktop bridge for Arena AI Bash requests to a local workspace.",
   "type": "module",

@@ -4,7 +4,7 @@
 
 The Arena prompt/chat stays on Arena.ai. This repository does not embed a chat website or try to imitate Arena's UI.
 
-**Download page:** [lumifaye.github.io/ArenaAgent2local](https://lumifaye.github.io/ArenaAgent2local/) · **Latest releases:** [GitHub Releases](https://github.com/lumifaye/ArenaAgent2local/releases)
+**Download page:** [lumifaye.github.io/ArenaAgent2local](https://lumifaye.github.io/ArenaAgent2local/) · **Agent guide:** [agents.md](https://lumifaye.github.io/ArenaAgent2local/agents.md) · **Latest releases:** [GitHub Releases](https://github.com/lumifaye/ArenaAgent2local/releases)
 
 ## Run the desktop app
 
@@ -35,9 +35,9 @@ Build output is written to the ignored `release/` folder.
 
 ## Website and Windows releases
 
-The retro-styled product page lives in `site/` and is published to [GitHub Pages](https://lumifaye.github.io/ArenaAgent2local/) by `.github/workflows/pages.yml` when site changes reach `main` or the active `arena/8393bb53-arenaagent2local` branch. The page's **Download for Windows** button resolves the `Arena-Local-Setup.exe` asset from the latest GitHub Release.
+The retro-styled product page lives in `site/` and is published to [GitHub Pages](https://lumifaye.github.io/ArenaAgent2local/) by `.github/workflows/pages.yml` when site changes reach `main` or the active `arena/8393bb53-arenaagent2local` branch. The page's **Download for Windows** button resolves the `Arena-Local-Setup.exe` asset from the latest GitHub Release. Its public [`agents.md`](https://lumifaye.github.io/ArenaAgent2local/agents.md) guide covers the bridge, privacy, and safe usage; the copied Arena setup prompt directs Bash to fetch it before making bridge requests.
 
-`.github/workflows/windows-release.yml` builds a Windows x64 NSIS installer and runs the test suite on pushes to the active branch, uploading the installer as a 14-day Actions artifact. Publishing a GitHub Release with a `v*` tag triggers the same workflow to build the installer and attach it to that release. The tag must exactly match the version in `package.json` (the current version `0.1.0` uses `v0.1.0`; after a version bump, use the matching tag such as `v0.1.1`). The workflow uses the repository's `GITHUB_TOKEN`; no release secret is needed. The installer is not code-signed, so Windows may show an unrecognized-publisher SmartScreen notice. GitHub Pages should use **Settings → Pages → Build and deployment → GitHub Actions**.
+`.github/workflows/windows-release.yml` builds a Windows x64 NSIS installer and runs the test suite on pushes to the active branch, uploading the installer as a 14-day Actions artifact. Publishing a GitHub Release with a `v*` tag triggers the same workflow to build the installer and attach it to that release. The tag must exactly match the version in `package.json` (the current version `0.1.1` uses `v0.1.1`; after a version bump, use the matching tag such as `v0.1.2`). The workflow uses the repository's `GITHUB_TOKEN`; no release secret is needed. The installer is not code-signed, so Windows may show an unrecognized-publisher SmartScreen notice. GitHub Pages should use **Settings → Pages → Build and deployment → GitHub Actions**.
 
 ## Arena Bash bridge API
 
