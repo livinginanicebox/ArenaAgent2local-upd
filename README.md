@@ -4,6 +4,8 @@
 
 The Arena prompt/chat stays on Arena.ai. This repository does not embed a chat website or try to imitate Arena's UI.
 
+**Download page:** [lumifaye.github.io/ArenaAgent2local](https://lumifaye.github.io/ArenaAgent2local/) · **Latest releases:** [GitHub Releases](https://github.com/lumifaye/ArenaAgent2local/releases)
+
 ## Run the desktop app
 
 Requirements: Node.js **22.12 or newer** and npm.
@@ -30,6 +32,12 @@ npm run dist
 ```
 
 Build output is written to the ignored `release/` folder.
+
+## Website and Windows releases
+
+The retro-styled product page lives in `site/` and is published to [GitHub Pages](https://lumifaye.github.io/ArenaAgent2local/) by `.github/workflows/pages.yml` when site changes reach `main`. The page's **Download for Windows** button resolves the `Arena-Local-Setup.exe` asset from the latest GitHub Release.
+
+`.github/workflows/windows-release.yml` builds a Windows x64 NSIS installer, runs the test suite, and publishes the installer as a GitHub Release when a `v*` tag is pushed. The tag must exactly match the version in `package.json` (the current version `0.1.0` would use tag `v0.1.0`; after a version bump, use the matching tag such as `v0.1.1`). Bump the package version, merge the change, then push the matching version tag to publish a release. The workflow uses the repository's `GITHUB_TOKEN`; no release secret is needed. The installer is not code-signed, so Windows may show an unrecognized-publisher SmartScreen notice. GitHub Pages should use **Settings → Pages → Build and deployment → GitHub Actions**.
 
 ## Arena Bash bridge API
 

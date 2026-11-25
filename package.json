@@ -37,7 +37,12 @@
       "node_modules/@ngrok/ngrok/**/*"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "artifactName": "Arena-Local-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     },
     "mac": {
       "target": "dmg"
