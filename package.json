@@ -1,0 +1,49 @@
+{
+  "name": "arena-local-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A permissioned desktop bridge for Arena AI Bash requests to a local workspace.",
+  "type": "module",
+  "main": "desktop/main.mjs",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "@ngrok/ngrok": "^1.8.1"
+  },
+  "devDependencies": {
+    "electron": "^45.5.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "ai.arena.localdesktop",
+    "productName": "Arena Local",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/**/*",
+      "public/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/@ngrok/ngrok/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
