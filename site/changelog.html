@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#102a66">
-  <meta name="description" content="Arena Local release notes: desktop connection fixes, file browser improvements, privacy documentation, and the multi-page website refresh.">
+  <meta name="description" content="Arena Local v0.1.2 adds a local-only safety unlock for full-computer access combined with No-Ask mode.">
   <meta property="og:title" content="Updates — Arena Local">
-  <meta property="og:description" content="See what changed in Arena Local v0.1.1.">
+  <meta property="og:description" content="See what changed in Arena Local v0.1.2.">
   <title>Updates // Arena Local</title>
   <link rel="canonical" href="https://lumifaye.github.io/ArenaAgent2local/changelog.html">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
@@ -28,8 +28,15 @@
       <main id="main" class="subpage-main">
         <p class="breadcrumb"><a href="./">Home</a><span aria-hidden="true">/</span> Updates</p>
         <section class="page-hero page-hero-compact" aria-labelledby="page-title">
-          <div><p class="eyebrow">RELEASE NOTES / NOVEMBER 25, 2026</p><h1 id="page-title">A better bridge.<br><span>A clearer map.</span></h1><p>Version 0.1.1 tightens connection behavior, fixes a session-approval race, makes the local file browser easier to use, and turns the product site into a proper field guide.</p><div class="hero-inline-links"><a class="page-button page-button-primary" href="./download.html">Get v0.1.1 <span aria-hidden="true">↓</span></a><a class="quiet-link" href="https://github.com/lumifaye/ArenaAgent2local/releases/tag/v0.1.1" target="_blank" rel="noopener noreferrer">Open the release ↗</a></div></div>
-          <div class="release-badge"><span>ARENA LOCAL</span><strong>0.1.1</strong><small>PATCH RELEASE<br>WINDOWS X64</small></div>
+          <div><p class="eyebrow">RELEASE NOTES / NOVEMBER 25, 2026</p><h1 id="page-title">A safer switch.<br><span>More deliberate control.</span></h1><p>Version 0.1.2 adds a local-only safety unlock before full-computer access can be combined with No-Ask mode, plus stronger remote/API protections.</p><div class="hero-inline-links"><a class="page-button page-button-primary" href="./download.html">Get v0.1.2 <span aria-hidden="true">↓</span></a><a class="quiet-link" href="https://github.com/lumifaye/ArenaAgent2local/releases/tag/v0.1.2" target="_blank" rel="noopener noreferrer">Open the release ↗</a></div></div>
+          <div class="release-badge"><span>ARENA LOCAL</span><strong>0.1.2</strong><small>SAFETY RELEASE<br>WINDOWS X64</small></div>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.2 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.2</span><small>NOV 25, 2026</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-added">ADDED</span><ul><li>Support full-computer access with No-Ask only through an explicit local safety sequence: the exact warning, a 30-second lockout, slide-to-unlock, final native confirmation, and an additional warning before the remote link starts.</li><li>Rotate the pairing key when the combined mode is authorized; expire and invalidate unlock challenges when local access state changes, the workspace changes, or a connection starts.</li><li>Allow full-computer file tools to use absolute paths outside the selected workspace when explicitly enabled, while retaining text and size limits and local Ask/Read only controls.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">HARDENED</span><ul><li>Restrict mode-changing IPC to the trusted local Arena Local window; the remote API rejects permission/scope injection and denies combined-mode tasks without local authorization.</li><li>Use a monotonic clock for the waiting period and reset dangerous access modes when the connection stops, fails, the pairing key rotates, the workspace changes, or the app closes.</li><li>Show prominent combined-mode warnings and identify outside-workspace writes in the desktop review UI.</li></ul></div>
+          </div></article>
         </section>
 
         <section class="page-section" aria-label="Version 0.1.1 release notes">

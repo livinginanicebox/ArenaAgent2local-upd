@@ -5,6 +5,15 @@ let currentFileEntries = [];
 let currentFileTruncated = false;
 let toastTimer = null;
 let lastCompletedWrites = '';
+let combinedUnlockChallengeId = '';
+let combinedUnlockReadyAt = 0;
+let combinedUnlockExpiresAt = 0;
+let combinedUnlockWorkspaceRoot = '';
+let combinedUnlockPermissionMode = '';
+let combinedUnlockPairingHint = '';
+let combinedUnlockTimer = null;
+let combinedUnlockSliderUnlocked = false;
+let combinedUnlockStarting = false;
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -29,6 +38,12 @@ const els = {
   cancelTunnelBtn: $('#cancelTunnelBtn'),
   startNote: $('#startNote'),
   chooseWorkspaceBtn: $('#chooseWorkspaceBtn'),
+  workspaceScopeIcon: $('#workspaceScopeIcon'),
+  workspaceScopeCopy: $('#workspaceScopeCopy'),
+  fullComputerAccessBtn: $('#fullComputerAccessBtn'),
+  fullComputerAccessCopy: $('#fullComputerAccessCopy'),
+  fullComputerAccessBanner: $('#fullComputerAccessBanner'),
+  credentialRule: $('#credentialRule'),
   appVersion: $('#appVersion'),
   tunnelUrl: $('#tunnelUrl'),
   pairingHint: $('#pairingHint'),
@@ -38,6 +53,15 @@ const els = {
   permissionDescription: $('#permissionDescription'),
   changeRule: $('#changeRule'),
   dangerModeBanner: $('#dangerModeBanner'),
+  dangerModeTitle: $('#dangerModeTitle'),
+  dangerModeCopy: $('#dangerModeCopy'),
+  fullComputerAccessBannerCopy: $('#fullComputerAccessBannerCopy'),
+  fullNoAskUnlockDialog: $('#fullNoAskUnlockDialog'),
+  fullNoAskCountdown: $('#fullNoAskCountdown'),
+  fullNoAskProgress: $('#fullNoAskProgress'),
+  fullNoAskSlider: $('#fullNoAskSlider'),
+  continueFullNoAskUnlock: $('#continueFullNoAskUnlock'),
+  cancelFullNoAskUnlock: $('#cancelFullNoAskUnlock'),
   approvalQueue: $('#approvalQueue'),
   approvalCount: $('#approvalCount'),
   activityList: $('#activityList'),
@@ -74,6 +98,16 @@ function applyState(state) {
   const wasLive = Boolean(appState?.tunnelActive);
   const previousWorkspace = appState?.workspaceRoot;
   appState = state;
+  if (combinedUnlockChallengeId && (
+    !state.fullComputerAccess
+    || state.permissionMode !== combinedUnlockPermissionMode
+    || state.workspaceRoot !== combinedUnlockWorkspaceRoot
+    || state.pairingTokenHint !== combinedUnlockPairingHint
+    || state.tunnelActive || state.tunnelStarting || state.tunnelStopping
+    || (state.tasks || []).some((task) => ['running', 'preparing', 'awaiting_approval'].includes(task.status))
+  )) {
+    void cancelCombinedUnlock();
+  }
   if (previousWorkspace && previousWorkspace !== state.workspaceRoot) {
     browserPath = '.';
     currentFileEntries = [];
@@ -119,13 +153,26 @@ function updateConnectionPanel() {
   els.liveConnection.hidden = !live;
   els.startTunnelBtn.disabled = !configured || busy || live;
   els.startTunnelBtn.setAttribute('aria-busy', String(busy));
-  els.startTunnelLabel.textContent = starting ? 'Opening secure link…' : stopping ? 'Stopping…' : 'Start remote connection';
+  els.startTunnelLabel.textContent = starting
+    ? 'Opening secure link…'
+    : stopping
+      ? 'Stopping…'
+      : appState?.fullComputerAccess && appState?.permissionMode === 'no-ask'
+        ? 'Start FULL PC + NO-ASK link'
+        : appState?.fullComputerAccess
+          ? 'Start EXTREMELY DANGEROUS link'
+          : 'Start remote connection';
+  els.startTunnelBtn.classList.toggle('full-access', Boolean(appState?.fullComputerAccess));
   els.cancelTunnelBtn.hidden = !starting || stopping;
   els.startNote.textContent = starting
     ? 'Creating the temporary HTTPS link. You can cancel the attempt.'
     : stopping
       ? 'Closing the temporary link…'
-      : 'The public link is created only when you start it.';
+      : appState?.fullComputerAccess && appState?.permissionMode === 'no-ask'
+        ? 'EXTREMELY DANGEROUS: final native confirmation required; full file access and writes/commands without approval.'
+        : appState?.fullComputerAccess
+          ? 'EXTREMELY DANGEROUS: this link can expose all files your OS account can access.'
+          : 'The public link is created only when you start it.';
   els.chooseWorkspaceBtn.disabled = live || busy;
   els.chooseWorkspaceBtn.title = live || busy ? 'Stop the remote connection before changing folders.' : 'Choose the local folder Arena may access.';
   els.ngrokTokenInput.disabled = busy;
@@ -143,29 +190,94 @@ function updateConnectionPanel() {
   els.ngrokTokenInput.placeholder = configured ? 'Saved token — leave blank to keep' : 'Paste ngrok authtoken';
 }
 
+function updateScopePanel() {
+  const fullComputerAccess = Boolean(appState?.fullComputerAccess);
+  const live = Boolean(appState?.tunnelActive || appState?.tunnelStarting || appState?.tunnelStopping);
+  const noAsk = els.permissionMode.value === 'no-ask';
+  const noAskOption = els.permissionMode.querySelector('option[value="no-ask"]');
+  noAskOption.disabled = false;
+  noAskOption.textContent = fullComputerAccess
+    ? 'No approval — EXTREMELY DANGEROUS (local unlock required)'
+    : 'No approval — VERY DANGEROUS';
+  els.workspaceScopeIcon.textContent = fullComputerAccess ? '!' : '✓';
+  els.workspaceScopeIcon.classList.toggle('full-access-scope-icon', fullComputerAccess);
+  els.workspaceScopeCopy.textContent = fullComputerAccess
+    ? 'Full computer access is active; file tools are no longer workspace-confined.'
+    : 'Remote file actions stay inside this folder.';
+  els.fullComputerAccessBtn.textContent = fullComputerAccess ? 'Disable full-computer access' : 'Enable EXTREMELY DANGEROUS access';
+  els.fullComputerAccessBtn.classList.toggle('active', fullComputerAccess);
+  els.fullComputerAccessBtn.disabled = live || (!fullComputerAccess && noAsk);
+  els.fullComputerAccessBtn.setAttribute('aria-pressed', String(fullComputerAccess));
+  els.fullComputerAccessBtn.title = live
+    ? 'Stop the remote connection before changing access scope.'
+    : noAsk && !fullComputerAccess
+      ? 'Switch to Ask or Read only before enabling full-computer access.'
+      : fullComputerAccess
+        ? 'Disable this temporary mode and rotate the pairing key.'
+        : 'EXTREMELY DANGEROUS: requires two local warnings and removes the workspace boundary.';
+  els.fullComputerAccessCopy.textContent = fullComputerAccess
+    ? noAsk
+      ? 'EXTREMELY DANGEROUS: Arena can read private files and credentials; writes and shell commands run without local approval. Stop the link to disable both modes and rotate the key.'
+      : 'EXTREMELY DANGEROUS: private files and credentials may be readable and sent to Arena. Ask mode requires local write approval. No-Ask is available only through the local 30-second slide-to-unlock safety flow.'
+    : noAsk
+      ? 'EXTREMELY DANGEROUS. Switch to Ask or Read only before enabling full-computer access.'
+      : 'EXTREMELY DANGEROUS. Two native warnings required. Must be enabled while disconnected; resets when the link stops. Combining with No-Ask requires a separate 30-second local slide-to-unlock and final warning.';
+  els.fullComputerAccessBannerCopy.textContent = noAsk
+    ? 'Full-computer access is combined with No-Ask: file reads can expose private files and credentials to Arena.ai; writes and shell commands run immediately as your OS user without per-action approval. Stop the link to disable this mode and rotate the pairing key.'
+    : 'Arena can list, read, search, and request writes anywhere this OS account can access, including private and credential files. Requested contents can be sent to Arena.ai. Writes follow the selected permission mode. Stop the remote link to disable full-computer access and rotate the pairing key.';
+  els.fullComputerAccessBanner.hidden = !fullComputerAccess;
+  els.credentialRule.textContent = fullComputerAccess ? 'ACCESSIBLE' : 'BLOCK';
+  els.credentialRule.classList.toggle('full-access-rule', fullComputerAccess);
+  els.fileFoot.textContent = fullComputerAccess
+    ? 'Remote file tools can use absolute paths anywhere this OS account can access. This desktop preview remains in the selected folder.'
+    : 'Arena can only see files in the selected folder.';
+}
+
 function updatePermissionCopy() {
   const mode = els.permissionMode.value;
   const readOnly = mode === 'read-only';
   const noAsk = mode === 'no-ask';
-  els.sidebarSecurityCopy.textContent = noAsk
-    ? 'VERY DANGEROUS: Arena can write files and run shell commands without approval.'
-    : readOnly
-      ? 'File reads are available. Writes and terminal commands are blocked.'
-      : 'Arena can only request scoped actions. File writes and shell commands wait for you here.';
-  els.bridgeDisclaimerCopy.textContent = noAsk
-    ? 'VERY DANGEROUS: writes and shell commands execute immediately without desktop approval. Stop the link, rotate the key, or switch to Ask or Read only to disable this mode.'
-    : readOnly
-      ? 'The bearer key lets Arena read files in this workspace. File writes and shell commands are blocked in Read only mode.'
-      : 'The bearer key lets Arena read files in this workspace. Writes and shell commands pause for desktop approval unless you enable VERY DANGEROUS no-ask mode.';
-  els.permissionDescription.textContent = noAsk
-    ? 'VERY DANGEROUS: every remote write and shell command runs immediately without approval.'
-    : readOnly
-      ? 'Arena can inspect files, but writes and terminal commands are blocked.'
-      : 'Reads are available. Writes and commands pause for your desktop approval.';
+  const fullComputerAccess = Boolean(appState?.fullComputerAccess);
+  els.sidebarSecurityCopy.textContent = fullComputerAccess
+    ? noAsk
+      ? 'EXTREMELY DANGEROUS: Arena can read files anywhere and write or run commands without approval.'
+      : 'EXTREMELY DANGEROUS: Arena can read files anywhere this OS account can access. Writes still follow your permission mode.'
+    : noAsk
+      ? 'VERY DANGEROUS: Arena can write files and run shell commands without approval.'
+      : readOnly
+        ? 'File reads are available. Writes and terminal commands are blocked.'
+        : 'Arena can only request scoped actions. File writes and shell commands wait for you here.';
+  els.bridgeDisclaimerCopy.textContent = fullComputerAccess
+    ? noAsk
+      ? 'EXTREMELY DANGEROUS: full-computer reads plus automatic file writes and shell commands are active. Private data may be sent to Arena.ai; commands run with your normal OS-user permissions.'
+      : 'EXTREMELY DANGEROUS full-computer access is on. Arena can read private and credential files; requested contents are sent to Arena.ai. Stop the remote link to disable this mode and rotate the pairing key.'
+    : noAsk
+      ? 'VERY DANGEROUS: writes and shell commands execute immediately without desktop approval. Stop the link, rotate the key, or switch to Ask or Read only to disable this mode.'
+      : readOnly
+        ? 'The bearer key lets Arena read files in this workspace. File writes and shell commands are blocked in Read only mode.'
+        : 'The bearer key lets Arena read files in this workspace. Writes and shell commands pause for desktop approval unless you enable VERY DANGEROUS no-ask mode.';
+  els.permissionDescription.textContent = fullComputerAccess
+    ? noAsk
+      ? 'EXTREMELY DANGEROUS: reads can reach any location; writes and commands run immediately without approval.'
+      : readOnly
+        ? 'EXTREMELY DANGEROUS: file reads can reach any location; writes and commands remain blocked.'
+        : 'EXTREMELY DANGEROUS: file reads can reach any location. Writes and commands still wait for local approval.'
+    : noAsk
+      ? 'VERY DANGEROUS: every remote write and shell command runs immediately without approval.'
+      : readOnly
+        ? 'Arena can inspect files, but writes and terminal commands are blocked.'
+        : 'Reads are available. Writes and commands pause for your desktop approval.';
   els.changeRule.textContent = noAsk ? 'AUTO' : readOnly ? 'BLOCK' : 'ASK';
   els.changeRule.classList.toggle('blocked-state', readOnly);
   els.changeRule.classList.toggle('no-ask-state', noAsk);
+  els.dangerModeTitle.textContent = fullComputerAccess
+    ? 'EXTREMELY DANGEROUS · FULL COMPUTER + NO-ASK ACTIVE'
+    : 'VERY DANGEROUS · NO-ASK MODE ACTIVE';
+  els.dangerModeCopy.textContent = fullComputerAccess
+    ? 'Full-computer reads and automatic file writes and shell commands are active. Actions run as your OS user without per-action approval. Stop the link, rotate the key, or close Arena Local to disable this mode.'
+    : 'Arena file writes and terminal commands execute immediately. Shell commands can reach files outside the selected workspace. Stop the link, rotate the key, choose a different folder, switch to Ask or Read only, or close Arena Local to disable this mode.';
   els.dangerModeBanner.hidden = !noAsk;
+  updateScopePanel();
 }
 
 function taskTitle(task) {
@@ -245,6 +357,7 @@ function renderApprovalCard(task) {
   const card = makeElement('article', 'remote-approval-card');
   const head = makeElement('div', 'remote-approval-head');
   const change = task.action === 'write_file' || task.action === 'run_command';
+  const outsideWorkspace = task.action === 'write_file' && task.preview?.outsideWorkspace === true;
   head.append(makeElement('span', 'remote-approval-icon', task.action === 'run_command' ? '$' : '✎'));
   const title = makeElement('div', 'remote-approval-title');
   title.append(makeElement('strong', '', taskTitle(task)));
@@ -253,7 +366,9 @@ function renderApprovalCard(task) {
   card.append(head);
   card.append(makeElement('div', 'remote-approval-description', task.action === 'run_command'
     ? 'This exact shell command will run from your workspace with your OS account permissions. It is not sandboxed.'
-    : 'Arena is asking to change a file in the selected workspace. Review the complete proposed diff.'));
+    : outsideWorkspace
+      ? 'EXTREMELY DANGEROUS: this write targets a file outside the selected workspace. Verify the full path and complete diff before approving.'
+      : 'Arena is asking to change a file in the selected workspace. Review the complete proposed diff.'));
 
   if (task.action === 'run_command') {
     const warning = makeElement('div', 'preview-box');
@@ -262,12 +377,16 @@ function renderApprovalCard(task) {
     card.append(warning);
     card.append(makeElement('div', 'command-warning', '⚠  Shell can reach files outside this workspace. Only approve commands you understand.'));
   } else if (task.preview) {
-    const box = makeElement('div', 'preview-box');
-    box.append(makeElement('div', 'preview-label', task.preview.exists ? 'Proposed diff' : 'New file contents'));
+    const box = makeElement('div', `preview-box${outsideWorkspace ? ' external-write-preview' : ''}`);
+    box.append(makeElement('div', 'preview-label', outsideWorkspace
+      ? 'EXTREMELY DANGEROUS · OUTSIDE WORKSPACE'
+      : task.preview.exists ? 'Proposed diff' : 'New file contents'));
+    if (outsideWorkspace) box.append(makeElement('code', 'preview-path', task.preview.path));
     const diff = document.createElement('pre');
     appendDiff(diff, task.preview);
     box.append(diff);
     card.append(box);
+    if (outsideWorkspace) card.append(makeElement('div', 'command-warning external-write-warning', '‼  This can overwrite a private or system file your OS account can access. Approval applies only to this exact write.'));
   }
 
   const controls = makeElement('div', 'approval-buttons');
@@ -481,16 +600,28 @@ async function cancelTunnelStart() {
 }
 
 async function stopTunnel() {
-  if (!window.confirm('Stop the remote link and revoke the current Arena connection?')) return;
-  await runUiAction(() => window.arenaLocal.stopTunnel(), 'Remote link stopped and pending approvals denied.');
+  const confirmation = appState?.fullComputerAccess
+    ? 'Stop the remote link? This disables EXTREMELY DANGEROUS full-computer access, rotates the pairing key, and denies pending approvals.'
+    : 'Stop the remote link and revoke the current Arena connection?';
+  if (!window.confirm(confirmation)) return;
+  const success = appState?.fullComputerAccess
+    ? 'Remote link stopped; full-computer access disabled, pairing key rotated, and pending approvals denied.'
+    : 'Remote link stopped and pending approvals denied.';
+  await runUiAction(() => window.arenaLocal.stopTunnel(), success);
 }
 
 async function rotatePairingKey() {
-  if (!window.confirm('Rotate the bearer key? This revokes the current Arena instructions and denies any pending approvals.')) return;
+  const confirmation = appState?.fullComputerAccess
+    ? 'Rotate the bearer key? This disables EXTREMELY DANGEROUS full-computer access, revokes current Arena instructions, and denies pending approvals.'
+    : 'Rotate the bearer key? This revokes the current Arena instructions and denies any pending approvals.';
+  if (!window.confirm(confirmation)) return;
+  const hadFullComputerAccess = Boolean(appState?.fullComputerAccess);
   try {
     const result = await window.arenaLocal.rotatePairingToken();
     applyState(await window.arenaLocal.getState());
-    showToast(`Pairing key rotated. New ending: ${result.hint}`);
+    showToast(hadFullComputerAccess
+      ? `Pairing key rotated; full-computer access disabled. New ending: ${result.hint}`
+      : `Pairing key rotated. New ending: ${result.hint}`);
   } catch (error) {
     showToast(error.message, true);
   }
@@ -525,8 +656,147 @@ async function copyTunnelUrl() {
   }
 }
 
+function resetCombinedUnlockDialog() {
+  clearInterval(combinedUnlockTimer);
+  combinedUnlockTimer = null;
+  combinedUnlockChallengeId = '';
+  combinedUnlockReadyAt = 0;
+  combinedUnlockExpiresAt = 0;
+  combinedUnlockWorkspaceRoot = '';
+  combinedUnlockPermissionMode = '';
+  combinedUnlockPairingHint = '';
+  combinedUnlockSliderUnlocked = false;
+  if (els.fullNoAskUnlockDialog.open) els.fullNoAskUnlockDialog.close();
+  els.fullNoAskSlider.value = '0';
+  els.fullNoAskSlider.disabled = true;
+  els.continueFullNoAskUnlock.disabled = true;
+  els.continueFullNoAskUnlock.textContent = 'Continue to final warning';
+  els.fullNoAskProgress.value = 0;
+  els.fullNoAskCountdown.textContent = 'Wait 30 seconds before the slider unlocks.';
+}
+
+async function cancelCombinedUnlock() {
+  const challengeId = combinedUnlockChallengeId;
+  resetCombinedUnlockDialog();
+  if (!challengeId) return;
+  try {
+    await window.arenaLocal.cancelFullComputerNoAskUnlock(challengeId);
+  } catch (error) {
+    showToast(error.message || 'Could not cancel the local safety unlock.', true);
+  }
+}
+
+function updateCombinedUnlockCountdown() {
+  if (!combinedUnlockChallengeId) return;
+  const now = performance.now();
+  if (now >= combinedUnlockExpiresAt) {
+    void cancelCombinedUnlock();
+    showToast('Safety unlock expired. No-Ask was not enabled; start the warning sequence again.', true);
+    return;
+  }
+  const remainingMs = Math.max(0, combinedUnlockReadyAt - now);
+  const elapsedSeconds = Math.min(30, Math.max(0, (30_000 - remainingMs) / 1_000));
+  els.fullNoAskProgress.value = elapsedSeconds;
+  if (remainingMs > 0) {
+    const remainingSeconds = Math.ceil(remainingMs / 1_000);
+    els.fullNoAskCountdown.textContent = `Continue unlocks in ${remainingSeconds} second${remainingSeconds === 1 ? '' : 's'}.`;
+    els.fullNoAskSlider.disabled = true;
+    els.continueFullNoAskUnlock.disabled = true;
+    return;
+  }
+  els.fullNoAskProgress.value = 30;
+  els.fullNoAskCountdown.textContent = combinedUnlockSliderUnlocked
+    ? '30-second wait complete. Slider unlocked; Continue is ready.'
+    : '30-second wait complete. Slide all the way right to unlock Continue.';
+  els.fullNoAskSlider.disabled = false;
+  els.continueFullNoAskUnlock.disabled = !combinedUnlockSliderUnlocked;
+}
+
+async function beginCombinedUnlock() {
+  if (combinedUnlockStarting || combinedUnlockChallengeId) return;
+  combinedUnlockStarting = true;
+  try {
+    const challenge = await window.arenaLocal.beginFullComputerNoAskUnlock();
+    if (!challenge) return;
+    if (typeof challenge.challengeId !== 'string' || !challenge.challengeId) {
+      throw new Error('The local safety challenge was not valid. No-Ask was not enabled.');
+    }
+    combinedUnlockChallengeId = challenge.challengeId;
+    if (challenge.waitMs !== 30_000) throw new Error('The local safety challenge was not valid. No-Ask was not enabled.');
+    combinedUnlockWorkspaceRoot = appState?.workspaceRoot || '';
+    combinedUnlockPermissionMode = appState?.permissionMode || 'ask';
+    combinedUnlockPairingHint = appState?.pairingTokenHint || '';
+    const now = performance.now();
+    combinedUnlockReadyAt = now + challenge.waitMs;
+    combinedUnlockExpiresAt = now + Math.max(challenge.waitMs, (Number(challenge.expiresInMs) || 0) - 1_000);
+    combinedUnlockSliderUnlocked = false;
+    els.fullNoAskSlider.value = '0';
+    els.fullNoAskSlider.disabled = true;
+    els.continueFullNoAskUnlock.disabled = true;
+    els.continueFullNoAskUnlock.textContent = 'Continue to final warning';
+    els.fullNoAskProgress.value = 0;
+    els.fullNoAskCountdown.textContent = 'Continue unlocks in 30 seconds.';
+    els.fullNoAskUnlockDialog.showModal();
+    updateCombinedUnlockCountdown();
+    combinedUnlockTimer = setInterval(updateCombinedUnlockCountdown, 200);
+  } catch (error) {
+    if (combinedUnlockChallengeId) {
+      const challengeId = combinedUnlockChallengeId;
+      resetCombinedUnlockDialog();
+      await window.arenaLocal.cancelFullComputerNoAskUnlock(challengeId).catch(() => {});
+    }
+    showToast(error.message || 'Could not begin the local safety unlock.', true);
+  } finally {
+    combinedUnlockStarting = false;
+  }
+}
+
+function updateCombinedUnlockSlider() {
+  if (!combinedUnlockChallengeId || performance.now() < combinedUnlockReadyAt) {
+    els.fullNoAskSlider.value = '0';
+    combinedUnlockSliderUnlocked = false;
+    els.continueFullNoAskUnlock.disabled = true;
+    return;
+  }
+  combinedUnlockSliderUnlocked = Number(els.fullNoAskSlider.value) >= 100;
+  els.continueFullNoAskUnlock.disabled = !combinedUnlockSliderUnlocked;
+  els.fullNoAskCountdown.textContent = combinedUnlockSliderUnlocked
+    ? '30-second wait complete. Slider unlocked; Continue is ready.'
+    : '30-second wait complete. Slide all the way right to unlock Continue.';
+}
+
+async function completeCombinedUnlock() {
+  if (!combinedUnlockChallengeId || !combinedUnlockSliderUnlocked || performance.now() < combinedUnlockReadyAt) return;
+  const challengeId = combinedUnlockChallengeId;
+  els.fullNoAskSlider.disabled = true;
+  els.continueFullNoAskUnlock.disabled = true;
+  els.continueFullNoAskUnlock.textContent = 'Waiting for final confirmation…';
+  clearInterval(combinedUnlockTimer);
+  combinedUnlockTimer = null;
+  try {
+    const state = await window.arenaLocal.completeFullComputerNoAskUnlock(challengeId);
+    resetCombinedUnlockDialog();
+    applyState(state);
+    if (state.fullComputerAccess && state.permissionMode === 'no-ask') {
+      showToast('EXTREMELY DANGEROUS full-computer + No-Ask enabled. The pairing key rotated; the remote link still requires a separate final warning.', true);
+    } else {
+      showToast('Combined mode was not enabled. Your previous permission mode remains active.');
+    }
+  } catch (error) {
+    resetCombinedUnlockDialog();
+    applyState(await window.arenaLocal.getState().catch(() => appState));
+    showToast(error.message || 'The combined-mode safety unlock failed.', true);
+  }
+}
+
 async function changePermission() {
   const mode = els.permissionMode.value;
+  if (mode === 'no-ask' && appState?.fullComputerAccess && appState?.permissionMode !== 'no-ask') {
+    els.permissionMode.value = appState.permissionMode || 'ask';
+    updatePermissionCopy();
+    await beginCombinedUnlock();
+    return;
+  }
   updatePermissionCopy();
   try {
     const state = await window.arenaLocal.setPermissionMode(mode);
@@ -548,13 +818,34 @@ async function changePermission() {
   }
 }
 
+async function toggleFullComputerAccess() {
+  const enable = !Boolean(appState?.fullComputerAccess);
+  els.fullComputerAccessBtn.disabled = true;
+  try {
+    const state = await window.arenaLocal.setFullComputerAccess(enable);
+    applyState(state);
+    if (enable && state.fullComputerAccess) {
+      showToast('EXTREMELY DANGEROUS full-computer access enabled. The pairing key was rotated; start the link and copy a fresh prompt.', true);
+    } else if (enable) {
+      showToast('Full-computer access was not enabled. Workspace confinement remains active.');
+    } else {
+      showToast('Full-computer access disabled and pairing key rotated.');
+    }
+  } catch (error) {
+    showToast(error.message || 'Could not change file-access scope.', true);
+  } finally {
+    updateScopePanel();
+  }
+}
+
 async function chooseWorkspace() {
   const previousRoot = appState?.workspaceRoot;
+  const hadFullComputerAccess = Boolean(appState?.fullComputerAccess);
   const result = await runUiAction(() => window.arenaLocal.chooseWorkspace());
   if (result && result.workspaceRoot !== previousRoot) {
     browserPath = '.';
     await loadFiles('.');
-    showToast('Workspace folder updated.');
+    showToast(hadFullComputerAccess ? 'Workspace updated; full-computer access was disabled and the pairing key rotated.' : 'Workspace folder updated.');
   }
 }
 
@@ -568,10 +859,19 @@ $('#rotatePairingBtn').addEventListener('click', rotatePairingKey);
 $('#rotatePairingTopBtn').addEventListener('click', rotatePairingKey);
 $('#forgetNgrokTokenBtn').addEventListener('click', forgetNgrokToken);
 $('#chooseWorkspaceBtn').addEventListener('click', chooseWorkspace);
+$('#fullComputerAccessBtn').addEventListener('click', toggleFullComputerAccess);
 $('#refreshFilesBtn').addEventListener('click', () => loadFiles(browserPath));
 els.fileFilter.addEventListener('input', () => renderFileList({ entries: currentFileEntries, truncated: currentFileTruncated }));
 $('#permissionMode').addEventListener('change', changePermission);
 $('#closeFileBtn').addEventListener('click', () => els.fileDialog.close());
+els.cancelFullNoAskUnlock.addEventListener('click', () => { void cancelCombinedUnlock(); });
+els.fullNoAskSlider.addEventListener('input', updateCombinedUnlockSlider);
+els.fullNoAskSlider.addEventListener('change', updateCombinedUnlockSlider);
+els.continueFullNoAskUnlock.addEventListener('click', () => { void completeCombinedUnlock(); });
+els.fullNoAskUnlockDialog.addEventListener('cancel', (event) => {
+  event.preventDefault();
+  void cancelCombinedUnlock();
+});
 
 const navigationItems = [...document.querySelectorAll('.nav-item')];
 for (const link of navigationItems) {

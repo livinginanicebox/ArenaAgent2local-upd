@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld('arenaLocal', {
   copyArenaInstructions: invoke('arena:copy-instructions'),
   copyTunnelUrl: invoke('arena:copy-tunnel-url'),
   setPermissionMode: invoke('arena:set-permission-mode'),
+  setFullComputerAccess: invoke('arena:set-full-computer-access'),
+  beginFullComputerNoAskUnlock: invoke('arena:begin-full-computer-no-ask-unlock'),
+  completeFullComputerNoAskUnlock: invoke('arena:complete-full-computer-no-ask-unlock'),
+  cancelFullComputerNoAskUnlock: invoke('arena:cancel-full-computer-no-ask-unlock'),
   approveTask: invoke('arena:approve-task'),
   onState(callback) {
     if (typeof callback !== 'function') return () => {};

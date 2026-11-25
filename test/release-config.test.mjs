@@ -11,6 +11,10 @@ const siteScript = await readFile(new URL('../site/site.js', import.meta.url), '
 const legacyPagesRedirect = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const agentGuide = await readFile(new URL('../site/agents.md', import.meta.url), 'utf8');
 const desktopMain = await readFile(new URL('../desktop/main.mjs', import.meta.url), 'utf8');
+const desktopUi = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+const desktopAppJs = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+const desktopPreload = await readFile(new URL('../desktop/preload.cjs', import.meta.url), 'utf8');
+const remoteApi = await readFile(new URL('../src/remote-api.mjs', import.meta.url), 'utf8');
 
 test('Windows installer artifact name matches the release and Pages download links', () => {
   const expectedInstaller = 'Arena-Local-Setup.exe';
@@ -39,8 +43,37 @@ test('copied Arena prompt fetches the public guide without exposing the pairing 
   assert.match(agentGuide, /Narrow exception for an explicitly requested outside-file edit/);
   assert.match(agentGuide, /wait for approval in the Arena Local desktop/);
   assert.match(agentGuide, /Never use `write_file` to escape the workspace/);
-  assert.match(desktopMain, /Paths for file actions must be relative to the selected workspace; write_file cannot edit outside it/);
-  assert.match(desktopMain, /Only if I explicitly name one exact file outside the workspace and ask you to edit it may you use run_command for that file only/);
+  assert.match(desktopMain, /File actions are confined to the selected workspace/);
+  assert.match(desktopMain, /EXTREMELY DANGEROUS FULL-COMPUTER ACCESS IS ENABLED/);
+});
+
+test('full-computer access is opt-in and temporary; combining with No-Ask requires a local timed unlock', () => {
+  assert.match(desktopMain, /let fullComputerAccess = false/);
+  assert.match(desktopMain, /async function confirmFullComputerAccess\(\)/);
+  assert.match(desktopMain, /EXTREMELY DANGEROUS: full-computer access/);
+  assert.match(desktopMain, /buttons: \['Keep workspace confinement', 'Enable EXTREMELY DANGEROUS mode'\]/);
+  assert.match(desktopMain, /set-full-computer-access/);
+  assert.match(desktopMain, /if \(mode === 'no-ask' && fullComputerAccess\)/);
+  assert.match(desktopMain, /const FULL_NO_ASK_WAIT_MS = 30_000/);
+  assert.match(desktopMain, /process\.hrtime\.bigint\(\)/);
+  assert.match(desktopMain, /assertTrustedUiEvent\(event\)/);
+  assert.match(desktopMain, /async function beginFullComputerNoAskUnlock\(\)/);
+  assert.match(desktopMain, /async function confirmCombinedFullNoAskStart\(\)/);
+  assert.ok(desktopUi.includes("you are SERIOUSLY playing with fire right now. please do NOT use this on a main computer and instead ONLY use this on a computer you do NOT care about at all. I'm serious. like. really serious. PLEASE. LISTEN. this setting is for purely expiermental purposes"));
+  assert.match(desktopPreload, /beginFullComputerNoAskUnlock/);
+  assert.match(desktopPreload, /completeFullComputerNoAskUnlock/);
+  assert.match(desktopPreload, /cancelFullComputerNoAskUnlock/);
+  assert.ok(desktopUi.includes('id="fullNoAskUnlockDialog"'));
+  assert.ok(desktopUi.includes('id="fullNoAskSlider" type="range" min="0" max="100" value="0" disabled'));
+  assert.match(desktopAppJs, /30-second wait complete\. Slide all the way right/);
+  assert.match(remoteApi, /task\.fullComputerAccess && getPermissionMode\(\) === 'no-ask' && !task\.fullComputerNoAskAuthorized/);
+  assert.match(remoteApi, /Unknown request field/);
+  assert.ok(desktopUi.includes('EXTREMELY DANGEROUS · FULL-COMPUTER ACCESS ACTIVE'));
+  assert.ok(desktopUi.includes('Enable full-computer access'));
+  assert.ok(siteHtml.includes('EXTREMELY DANGEROUS'));
+  assert.ok(agentGuide.includes('## Full computer access — EXTREMELY DANGEROUS'));
+  assert.match(agentGuide, /reads run without per-file approval/i);
+  assert.match(agentGuide, /30-second lockout, slide-to-unlock, and final native confirmation/i);
 });
 
 test('legacy branch-based Pages root redirects to the styled product page', () => {

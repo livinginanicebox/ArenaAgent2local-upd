@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#102a66">
-  <meta name="description" content="Understand Arena Local's privacy boundaries, file protections, ngrok tunnel, bearer key, and VERY DANGEROUS no-approval mode.">
+  <meta name="description" content="Understand Arena Local's privacy boundaries, file protections, ngrok tunnel, bearer key, no-approval mode, and EXTREMELY DANGEROUS full-computer access.">
   <meta property="og:title" content="Safety & privacy — Arena Local">
   <meta property="og:description" content="Know what stays local, what is sent to Arena.ai, and where the security boundaries are.">
   <title>Safety &amp; privacy // Arena Local</title>
@@ -47,8 +47,12 @@
           <div class="mode-grid">
             <article class="mode-card mode-ask"><span class="mode-status">DEFAULT / RECOMMENDED</span><h3>Ask before changes</h3><p>Reads run automatically. Writes show a proposed diff; shell requests show the exact command. You approve once, allow the exact action for the session, or deny.</p></article>
             <article class="mode-card mode-read"><span class="mode-status">READ-ONLY</span><h3>Inspect, don't mutate</h3><p>File writes and shell commands are denied. The agent must not retry by using another route or ask to weaken the control.</p></article>
-            <article class="mode-card mode-danger"><span class="mode-status">VERY DANGEROUS</span><h3>No approval</h3><p>Remote writes and commands run immediately without a per-action prompt. This mode can cause data loss and resets when the connection stops, the key rotates, the workspace changes, or the app closes.</p></article>
+            <article class="mode-card mode-danger"><span class="mode-status">VERY DANGEROUS</span><h3>No approval</h3><p>Remote writes and commands run immediately without a per-action prompt. With full-computer access, a separate local-only sequence shows the exact warning, waits 30 seconds, requires slide-to-unlock and a final native confirmation, then rotates the key. This mode can cause data loss and resets when the connection stops, the key rotates, the workspace changes, or the app closes.</p></article>
           </div>
+        </section>
+
+        <section class="page-section page-callout page-callout-danger" id="full-computer" aria-labelledby="full-computer-title">
+          <span class="callout-mark" aria-hidden="true">‼</span><div><p class="eyebrow">EXTREMELY DANGEROUS · FULL COMPUTER ACCESS</p><h2 id="full-computer-title">The workspace boundary is removed.</h2><p>This separate scope mode is off by default and requires two native confirmations while the tunnel is stopped. It lets Arena list, read, search, and propose writes anywhere your signed-in OS account can access—including hidden folders and credential files. Requested file contents are sent to Arena.ai; reads do not get a per-file approval. Ask mode still requires local write approval and Read only blocks writes. Combining full-computer access with No-Ask requires a new, local-only unlock: the exact warning appears, Continue stays locked for 30 seconds, then a slide-to-unlock and final native confirmation are required. The key rotates when the combination is enabled; a further native warning appears before the link starts. The mode is never saved and resets when the connection stops, the key rotates, the workspace changes, a connection attempt fails, or the app closes. The remote API cannot change modes or perform the unlock. It does not grant admin/root rights or sandbox OS access.</p></div>
         </section>
 
         <section class="page-section page-callout page-callout-danger" id="no-approval" aria-labelledby="danger-title">
@@ -58,14 +62,14 @@
         <section class="page-section" aria-labelledby="files-title">
           <div class="page-section-heading"><div><p class="eyebrow">FILE-TOOL PROTECTIONS</p><h2 id="files-title">Useful guardrails, not magic.</h2></div><p>The checks below reduce accidental exposure through file tools. They do not protect against an unsafe shell command or a compromised operating system.</p></div>
           <div class="page-grid page-grid-two">
-            <article class="info-card"><p class="card-kicker">BLOCKED BY FILE TOOLS</p><h3>Paths and sensitive names</h3><ul class="check-list"><li>Absolute paths, parent traversal, and symlink traversal.</li><li>Protected directories such as <code>.git</code>, <code>.ssh</code>, <code>.aws</code>, and dependency/build folders.</li><li>Common credential filenames such as <code>.env*</code>, <code>.npmrc</code>, <code>.netrc</code>, private-key extensions, and credential files.</li><li>Binary files; reads and writes over 256 KB; and search candidates over 512 KB are skipped or rejected.</li></ul><p class="fine-print">A parent-folder listing may show a protected filename or symlink entry marked as protected, but the tools will not open or follow it.</p></article>
+            <article class="info-card"><p class="card-kicker">BLOCKED BY FILE TOOLS</p><h3>Paths and sensitive names</h3><ul class="check-list"><li>In default workspace mode, absolute paths, parent traversal, and symlink traversal are blocked.</li><li>Protected directories such as <code>.git</code>, <code>.ssh</code>, <code>.aws</code>, and dependency/build folders are hidden from normal file actions.</li><li>Common credential filenames such as <code>.env*</code>, <code>.npmrc</code>, <code>.netrc</code>, private-key extensions, and credential files are protected by default.</li><li>Binary files; reads and writes over 256 KB; and search candidates over 512 KB are skipped or rejected.</li></ul><p class="fine-print">EXTREMELY DANGEROUS full-computer access disables the workspace, protected-directory, and credential-name boundaries. The file-size and text-only limits still apply.</p></article>
             <article class="info-card"><p class="card-kicker">LIMITS TO REMEMBER</p><h3>What the guardrails don't do</h3><ul class="check-list"><li>They do not sandbox terminal commands or restrict their OS permissions.</li><li>They do not stop Arena from receiving content you explicitly ask it to read.</li><li>They do not keep a copied bearer key secret after it has been shared.</li><li>They do not undo an action that you already approved and that is running.</li></ul><p class="fine-print">Use a workspace you control, keep the prompt private, and inspect every command before approving it.</p></article>
           </div>
         </section>
 
         <section class="page-section" aria-labelledby="checklist-title">
           <div class="page-section-heading"><div><p class="eyebrow">QUICK CHECKLIST</p><h2 id="checklist-title">Before you click Connect.</h2></div></div>
-          <ol class="safety-checklist"><li>Choose only the folder needed for the task.</li><li>Use Ask mode unless you have a specific, informed reason not to.</li><li>Keep the Arena setup prompt and pairing key private.</li><li>Read the exact command and review the complete diff before approving.</li><li>Stop the link or rotate the key when finished.</li></ol>
+          <ol class="safety-checklist"><li>Choose only the folder needed for the task; leave full-computer access off unless the task requires it.</li><li>Use Ask mode unless you have a specific, informed reason not to.</li><li>Keep the Arena setup prompt and pairing key private.</li><li>Read the exact command and review the complete diff before approving.</li><li>Stop the link or rotate the key when finished.</li></ol>
         </section>
 
         <section class="page-cta"><div><p class="eyebrow">PROTOTYPE NOTICE</p><h2>Use the controls. Keep a backup.</h2><p>Arena Local is an early prototype—not a security boundary for untrusted users or a replacement for OS-level isolation.</p></div><a class="page-button page-button-primary" href="./getting-started.html">Setup guide <span aria-hidden="true">→</span></a></section>

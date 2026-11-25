@@ -35,7 +35,7 @@
         <strong>Local permission gate</strong>
         <p id="sidebarSecurityCopy">Arena can only request scoped actions. File writes and shell commands wait for you here.</p>
       </div>
-      <div class="sidebar-footer"><span class="mini-avatar">A</span><span><strong>Arena Local</strong><small>Desktop companion</small></span><span class="footer-version" id="appVersion">v0.1.1</span></div>
+      <div class="sidebar-footer"><span class="mini-avatar">A</span><span><strong>Arena Local</strong><small>Desktop companion</small></span><span class="footer-version" id="appVersion">v0.1.2</span></div>
     </aside>
 
     <main class="main-area">
@@ -49,7 +49,8 @@
 
       <div class="content-grid">
         <section class="primary-column">
-          <div class="danger-mode-banner" id="dangerModeBanner" role="alert" hidden><span class="danger-banner-icon">!</span><div><strong>VERY DANGEROUS · NO-ASK MODE ACTIVE</strong><p>Arena file writes and terminal commands execute immediately. Shell commands can reach files outside the selected workspace. Stop the link, rotate the key, choose a different folder, switch to Ask or Read only, or close Arena Local to disable this mode.</p></div></div>
+          <div class="full-computer-access-banner" id="fullComputerAccessBanner" role="alert" hidden><span class="full-access-banner-icon">‼</span><div><strong>EXTREMELY DANGEROUS · FULL-COMPUTER ACCESS ACTIVE</strong><p id="fullComputerAccessBannerCopy">Arena can list, read, search, and request writes anywhere this OS account can access, including private and credential files. Requested contents can be sent to Arena.ai. Ask mode still requires local write approval. Stop the remote link to disable this mode and rotate the pairing key.</p></div></div>
+          <div class="danger-mode-banner" id="dangerModeBanner" role="alert" hidden><span class="danger-banner-icon">!</span><div><strong id="dangerModeTitle">VERY DANGEROUS · NO-ASK MODE ACTIVE</strong><p id="dangerModeCopy">Arena file writes and terminal commands execute immediately. Shell commands can reach files outside the selected workspace. Stop the link, rotate the key, choose a different folder, switch to Ask or Read only, or close Arena Local to disable this mode.</p></div></div>
           <section class="hero-panel" id="connection">
             <div class="hero-copy">
               <div class="hero-kicker"><span>✳</span> PROMPT IN ARENA · WORK LOCALLY</div>
@@ -100,7 +101,9 @@
             <div class="inspector-heading"><div><span class="section-eyebrow">ACCESS SCOPE</span><h2>Workspace</h2></div><span class="scope-icon">⌂</span></div>
             <div class="workspace-card"><div class="workspace-avatar">⌘</div><div class="workspace-meta"><strong id="workspaceName">Loading…</strong><span id="workspacePath">—</span></div></div>
             <button class="subtle-button" id="chooseWorkspaceBtn" type="button">Choose folder <span>↗</span></button>
-            <div class="workspace-scope"><span class="scope-check">✓</span><span>All file actions scoped to this folder</span></div>
+            <div class="workspace-scope"><span class="scope-check" id="workspaceScopeIcon">✓</span><span id="workspaceScopeCopy">Remote file actions stay inside this folder.</span></div>
+            <button class="full-access-toggle" id="fullComputerAccessBtn" type="button">Enable full-computer access</button>
+            <p class="full-access-description" id="fullComputerAccessCopy">EXTREMELY DANGEROUS. Two local warnings are required. This session-only mode can expose private files and credentials to Arena.</p>
           </section>
 
           <section class="inspector-panel permission-panel">
@@ -111,7 +114,7 @@
             <div class="permission-list">
               <div><span class="permission-check allowed">✓</span><span>List, read, search files</span><b>ALLOW</b></div>
               <div><span class="permission-check ask">!</span><span>Write files or run commands</span><b id="changeRule">ASK</b></div>
-              <div><span class="permission-check blocked">×</span><span>Known credential files</span><b>BLOCK</b></div>
+              <div><span class="permission-check blocked">×</span><span>Known credential files</span><b id="credentialRule">BLOCK</b></div>
             </div>
           </section>
 
@@ -137,6 +140,19 @@
     <div class="dialog-header"><div><span class="section-eyebrow">WORKSPACE FILE</span><h2 id="fileDialogTitle">File preview</h2></div><button class="icon-button" id="closeFileBtn" type="button" aria-label="Close file preview">×</button></div>
     <div class="file-preview-meta" id="filePreviewMeta"></div>
     <pre class="file-preview" id="filePreview"></pre>
+  </dialog>
+
+  <dialog class="combined-unlock-dialog" id="fullNoAskUnlockDialog" aria-labelledby="fullNoAskUnlockTitle" aria-describedby="fullNoAskWarningText">
+    <div class="combined-unlock-top"><span>LOCAL-ONLY SAFETY LOCK</span><b>EXTREMELY DANGEROUS</b></div>
+    <h2 id="fullNoAskUnlockTitle">Full computer + No-Ask</h2>
+    <p class="combined-warning-quote" id="fullNoAskWarningText">you are SERIOUSLY playing with fire right now. please do NOT use this on a main computer and instead ONLY use this on a computer you do NOT care about at all. I'm serious. like. really serious. PLEASE. LISTEN. this setting is for purely expiermental purposes</p>
+    <p class="combined-unlock-detail">This gives the Arena session full file access and lets it write files and run shell commands without per-action approval. Your OS user account is not sandboxed; data loss and private-file exposure are possible. The pairing key will rotate when you enable it. This cannot be enabled by an Arena API request.</p>
+    <div class="combined-countdown" id="fullNoAskCountdown" role="status" aria-live="polite">Wait 30 seconds before the slider unlocks.</div>
+    <progress class="combined-progress" id="fullNoAskProgress" max="30" value="0" aria-label="30-second safety waiting period"></progress>
+    <label class="combined-slider-label" for="fullNoAskSlider">After the timer reaches zero, slide all the way to the right to unlock Continue.</label>
+    <input class="combined-slider" id="fullNoAskSlider" type="range" min="0" max="100" value="0" disabled aria-label="Slide to unlock the combined full-computer and No-Ask mode">
+    <div class="combined-unlock-actions"><button class="secondary-button" id="cancelFullNoAskUnlock" type="button">Cancel</button><button class="danger-unlock-button" id="continueFullNoAskUnlock" type="button" disabled>Continue to final warning</button></div>
+    <p class="combined-unlock-foot">Canceling, closing this dialog, or letting the challenge expire leaves the current mode unchanged. A final native confirmation is still required.</p>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

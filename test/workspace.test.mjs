@@ -5,6 +5,7 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import {
   listWorkspace,
+  previewWorkspaceWrite,
   readForAgent,
   resolveWorkspaceRoot,
   resolveWorkspacePath,
@@ -71,4 +72,31 @@ test('writes are workspace-relative and search skips protected directories', asy
   const matches = await searchWorkspace(root, 'find-me');
   assert.deepEqual(matches.matches.map((item) => item.path), ['src/app.js']);
   await assert.rejects(writeWorkspaceFile(root, '../outside.txt', 'nope'), /Parent-directory|outside/i);
+});
+
+test('full-computer access permits absolute paths outside the workspace when explicitly enabled', async (t) => {
+  const { parent, root } = await makeWorkspace(t);
+  const privateDirectory = path.join(parent, 'private');
+  const privateFile = path.join(privateDirectory, '.env');
+  const newFile = path.join(privateDirectory, 'notes.txt');
+  await fs.mkdir(privateDirectory);
+  await fs.writeFile(privateFile, 'TEST_TOKEN=fixture-only\n');
+
+  await assert.rejects(readForAgent(root, privateFile), /Absolute paths/i);
+  await assert.rejects(listWorkspace(root, privateDirectory), /Absolute paths/i);
+  await assert.rejects(writeWorkspaceFile(root, newFile, 'outside'), /Absolute paths/i);
+
+  const listed = await listWorkspace(root, privateDirectory, { fullComputerAccess: true });
+  assert.equal(listed.path, privateDirectory);
+  assert.equal(listed.entries.find((entry) => entry.name === '.env').protected, false);
+  const read = await readForAgent(root, privateFile, { fullComputerAccess: true });
+  assert.equal(read.path, privateFile);
+  assert.equal(read.content, 'TEST_TOKEN=fixture-only\n');
+
+  const preview = await previewWorkspaceWrite(root, newFile, 'approved outside write\n', { fullComputerAccess: true });
+  assert.equal(preview.outsideWorkspace, true);
+  assert.equal(preview.path, newFile);
+  const written = await writeWorkspaceFile(root, newFile, 'approved outside write\n', null, { fullComputerAccess: true });
+  assert.equal(written.path, newFile);
+  assert.equal(await fs.readFile(newFile, 'utf8'), 'approved outside write\n');
 });

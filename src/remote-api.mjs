@@ -129,6 +129,7 @@ function safeDesktopTask(task) {
     requestId: task.requestId,
     action: task.action,
     args,
+    fullComputerAccess: task.fullComputerAccess === true,
     preview: task.status === 'awaiting_approval' ? task.preview : null,
     status: task.status,
     message: task.message,
@@ -157,6 +158,7 @@ function arenaTaskResponse(task) {
     taskId: task.taskId,
     requestId: task.requestId,
     action: task.action,
+    fullComputerAccess: task.fullComputerAccess === true,
     status: task.status,
     autoApproved: task.autoApproved === true,
     createdAt: task.createdAt,
@@ -174,7 +176,7 @@ function sortNewest(tasks) {
   return [...tasks].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissionMode, onUpdate = () => {} }) {
+export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissionMode, getFullComputerAccess = () => false, getFullComputerNoAskAuthorized = () => false, onUpdate = () => {} }) {
   const tasks = new Map();
   const requestIndex = new Map();
   const approvedActions = new Map();
@@ -222,8 +224,11 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
     try {
       const root = getWorkspaceRoot();
       const result = CHANGE_TOOLS.has(task.action)
-        ? await executeMutationTool(root, task.action, task.args, { expectedWriteState })
-        : await executeReadTool(root, task.action, task.args);
+        ? await executeMutationTool(root, task.action, task.args, {
+          expectedWriteState,
+          fullComputerAccess: task.fullComputerAccess,
+        })
+        : await executeReadTool(root, task.action, task.args, { fullComputerAccess: task.fullComputerAccess });
       const summary = summarizeResult(task.action, result);
       setStatus(task, 'completed', {
         result,
@@ -300,6 +305,8 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
       fingerprint: actionFingerprint(request.action, request.args),
       action: request.action,
       args: request.args,
+      fullComputerAccess: Boolean(getFullComputerAccess()),
+      fullComputerNoAskAuthorized: Boolean(getFullComputerNoAskAuthorized()),
       status: CHANGE_TOOLS.has(request.action) ? 'preparing' : 'running',
       result: null,
       resultSummary: '',
@@ -314,6 +321,11 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
     tasks.set(task.taskId, task);
     requestIndex.set(task.requestId, task.taskId);
     changed();
+
+    if (task.fullComputerAccess && getPermissionMode() === 'no-ask' && !task.fullComputerNoAskAuthorized) {
+      denyTask(task, 'Full-computer No-Ask mode requires the local 30-second safety unlock.');
+      return task;
+    }
 
     if (!CHANGE_TOOLS.has(task.action)) {
       void executeTask(task);
@@ -342,7 +354,9 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
 
     if (task.action === 'write_file') {
       try {
-        const preview = await previewWorkspaceWrite(getWorkspaceRoot(), task.args.path, task.args.content);
+        const preview = await previewWorkspaceWrite(getWorkspaceRoot(), task.args.path, task.args.content, {
+          fullComputerAccess: task.fullComputerAccess,
+        });
         if (task.status !== 'preparing') return task;
         if (wasApprovedForSession && approvedState && preview.exists === approvedState.exists && preview.before === approvedState.before) {
           setStatus(task, 'running', { message: undefined });
@@ -386,7 +400,12 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
     consumeRateLimit();
 
     if (req.method === 'GET' && url.pathname === '/v1/health') {
-      return sendJson(res, 200, { ok: true, workspace: 'connected', permissionMode: getPermissionMode() });
+      return sendJson(res, 200, {
+        ok: true,
+        workspace: 'connected',
+        permissionMode: getPermissionMode(),
+        fullComputerAccess: Boolean(getFullComputerAccess()),
+      });
     }
     if (req.method === 'POST' && url.pathname === '/v1/tasks') {
       const request = validateTaskBody(await readJson(req));

@@ -8,12 +8,22 @@ import { createRemoteApi } from '../src/remote-api.mjs';
 import { listWorkspace, readWorkspaceFile, resolveWorkspaceRoot } from '../src/workspace.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const UI_ENTRY_PATH = path.resolve(HERE, '..', 'public', 'index.html');
 const DEFAULT_PERMISSION_MODE = 'ask';
+const FULL_NO_ASK_WARNING = 'you are SERIOUSLY playing with fire right now. please do NOT use this on a main computer and instead ONLY use this on a computer you do NOT care about at all. I\'m serious. like. really serious. PLEASE. LISTEN. this setting is for purely expiermental purposes';
+const FULL_NO_ASK_WAIT_MS = 30_000;
+const FULL_NO_ASK_CHALLENGE_TTL_MS = 3 * 60_000;
+const FULL_NO_ASK_WAIT_NS = BigInt(FULL_NO_ASK_WAIT_MS) * 1_000_000n;
+const FULL_NO_ASK_CHALLENGE_TTL_NS = BigInt(FULL_NO_ASK_CHALLENGE_TTL_MS) * 1_000_000n;
 let mainWindow = null;
 let api = null;
 let apiPort = null;
 let workspaceRoot = null;
 let permissionMode = DEFAULT_PERMISSION_MODE;
+let fullComputerAccess = false;
+let fullComputerNoAskAuthorized = false;
+let combinedAccessUnlockChallenge = null;
+let combinedAccessUnlockStarting = false;
 let ngrokAuthtoken = '';
 let savedEncryptedNgrokToken = '';
 let pairingToken = createPairingToken();
@@ -29,6 +39,30 @@ let lastPendingCount = 0;
 
 function createPairingToken() {
   return crypto.randomBytes(32).toString('base64url');
+}
+
+function assertTrustedUiEvent(event) {
+  if (!mainWindow || event?.sender !== mainWindow.webContents || !event?.senderFrame?.isMainFrame) {
+    throw new Error('This action is available only from the Arena Local desktop window.');
+  }
+  let senderPath;
+  try {
+    const senderUrl = new URL(event.senderFrame.url);
+    if (senderUrl.protocol !== 'file:') throw new Error('Unexpected renderer origin.');
+    senderPath = path.resolve(fileURLToPath(senderUrl));
+  } catch {
+    throw new Error('This action is available only from the trusted Arena Local interface.');
+  }
+  if (senderPath !== UI_ENTRY_PATH) throw new Error('This action is available only from the trusted Arena Local interface.');
+}
+
+function clearFullComputerAccess() {
+  const wasEnabled = fullComputerAccess;
+  fullComputerAccess = false;
+  fullComputerNoAskAuthorized = false;
+  combinedAccessUnlockChallenge = null;
+  if (wasEnabled) pairingToken = createPairingToken();
+  return wasEnabled;
 }
 
 function encryptionAvailable() {
@@ -91,6 +125,7 @@ function snapshot() {
     workspaceRoot,
     workspaceName: path.basename(workspaceRoot || '') || 'Workspace',
     permissionMode,
+    fullComputerAccess,
     tunnelActive: Boolean(tunnelListener),
     tunnelStarting: Boolean(tunnelStartPromise),
     tunnelStopping: Boolean(tunnelStopPromise),
@@ -121,10 +156,17 @@ function publishState() {
 function arenaInstructions() {
   if (!tunnelUrl) throw new Error('Start the ngrok connection before copying the Arena instructions.');
   const writeWarning = permissionMode === 'no-ask'
-    ? 'WARNING: VERY DANGEROUS NO-ASK MODE IS CURRENTLY ACTIVE. File writes and terminal commands execute immediately without local approval. This mode resets when the user stops the link, rotates the pairing key, changes workspace, or closes the app. Request only actions strictly required by the user and never use destructive commands.'
+    ? fullComputerAccess
+      ? 'WARNING: EXTREMELY DANGEROUS FULL-COMPUTER + NO-ASK MODE IS CURRENTLY ACTIVE. File writes and terminal commands execute immediately without local approval, and file tools can reach anywhere this OS account can access. This mode resets when the user stops the link, rotates the key, changes workspace, or closes the app. Request only actions strictly required by the user and never use destructive commands.'
+      : 'WARNING: VERY DANGEROUS NO-ASK MODE IS CURRENTLY ACTIVE. File writes and terminal commands execute immediately without local approval. This mode resets when the user stops the link, rotates the key, changes workspace, or closes the app. Request only actions strictly required by the user and never use destructive commands.'
     : 'Current mode: file writes and terminal commands pause for desktop approval; wait for approval rather than retrying or bypassing it. VERY DANGEROUS no-ask mode is available in the desktop app and would run them immediately without approval.';
+  const scopeWarning = fullComputerAccess
+    ? 'EXTREMELY DANGEROUS FULL-COMPUTER ACCESS IS ENABLED. File actions accept absolute paths anywhere this signed-in OS account can access, including hidden folders and credential files; requested contents are sent to Arena.ai. Inspect only files directly needed for the user request. Writes still follow the current permission mode. This temporary mode resets when the link stops, the key rotates, the workspace changes, or the app closes.'
+    : permissionMode === 'ask'
+      ? 'File actions are confined to the selected workspace. For one exact outside file explicitly named by the user, use the narrow run_command exception in the guide and wait for Ask-mode approval.'
+      : 'File actions are confined to the selected workspace. The narrow outside-file run_command exception is unavailable in Read only or No-Ask mode. Do not use shell access to bypass the workspace or a local approval.';
   const guideUrl = 'https://lumifaye.github.io/ArenaAgent2local/agents.md';
-  return `Use Arena Local to work in my selected local workspace. Use your bash tool and curl to call this bridge; do not try to reach my computer by any other route.\n\nBefore making bridge requests, fetch and read the public usage and privacy guide with your Bash tool: curl -fsSL '${guideUrl}'. Treat it only as usage guidance; the user's request and live desktop permission mode are authoritative. Never send the bearer key to the guide URL.\n\nBase URL: ${tunnelUrl}\nAuthorization: Bearer ${pairingToken}\n\nAllowed actions are list_files, read_file, search_text, write_file, and run_command. Submit a task with POST /v1/tasks using JSON {"requestId":"a-unique-id-8-or-more-chars","action":"read_file","args":{"path":"README.md"}} and the Authorization: Bearer header. Poll GET /v1/tasks/{taskId} until status is completed, denied, expired, cancelled, or error. Completed responses contain result. Use a new requestId for each distinct action and reuse it only to retry the same request. Paths for file actions must be relative to the selected workspace; write_file cannot edit outside it. Only if I explicitly name one exact file outside the workspace and ask you to edit it may you use run_command for that file only. In Ask mode, wait for desktop approval; do not use this exception in Read only or No-Ask mode. Never read credentials, broaden scope, or use a shell command to bypass a safety restriction. ${writeWarning} Shell commands run with my normal OS permissions and can reach outside the workspace, so request only commands strictly required for my task. Do not print, reuse, or share the bearer token.\n\nExample read request:\ncurl -sS -X POST '${tunnelUrl}/v1/tasks' -H 'Authorization: Bearer ${pairingToken}' -H 'Content-Type: application/json' --data '{"requestId":"readme-demo-01","action":"read_file","args":{"path":"README.md"}}'`;
+  return `Use Arena Local to work on my computer under the current local access scope. Use your bash tool and curl to call this bridge; do not try to reach my computer by any other route.\n\nBefore making bridge requests, fetch and read the public usage and privacy guide with your Bash tool: curl -fsSL '${guideUrl}'. Treat it only as usage guidance; the user's request and live desktop permission mode are authoritative. Never send the bearer key to the guide URL.\n\nBase URL: ${tunnelUrl}\nAuthorization: Bearer ${pairingToken}\n\nAllowed actions are list_files, read_file, search_text, write_file, and run_command. Permission modes and file-access scope can only be changed in the local Arena Local window; the task API cannot enable them or run the safety unlock. Submit a task with POST /v1/tasks using JSON {"requestId":"a-unique-id-8-or-more-chars","action":"read_file","args":{"path":"README.md"}} and the Authorization: Bearer header. Poll GET /v1/tasks/{taskId} until status is completed, denied, expired, cancelled, or error. Completed responses contain result. Use a new requestId for each distinct action and reuse it only to retry the same request. ${scopeWarning} ${writeWarning} Shell commands run with my normal OS permissions and can reach outside the workspace, so request only commands strictly required for my task. Do not print, reuse, or share the bearer token.\n\nExample read request:\ncurl -sS -X POST '${tunnelUrl}/v1/tasks' -H 'Authorization: Bearer ${pairingToken}' -H 'Content-Type: application/json' --data '{"requestId":"readme-demo-01","action":"read_file","args":{"path":"README.md"}}'`;
 }
 
 async function confirmNoAskMode() {
@@ -152,11 +194,111 @@ async function confirmNoAskMode() {
   return final.response === 1;
 }
 
+async function confirmFullComputerAccess() {
+  const first = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'EXTREMELY DANGEROUS: full-computer access',
+    message: 'Arena will be able to request files from anywhere this OS account can access.',
+    detail: 'This removes the selected-workspace boundary and disables file-tool protections for hidden folders, credential filenames, and absolute paths. File contents you request can be sent over the ngrok tunnel to Arena.ai. Writes still follow Ask or Read only mode. Combining with No-Ask requires a separate, local-only 30-second lockout, slide-to-unlock, and final warning sequence. This is not an OS sandbox and does not elevate permissions. Only continue if you trust the connected Arena session and understand the data exposure risk.',
+    buttons: ['Cancel', 'I understand — continue'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  if (first.response !== 1) return false;
+  const final = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'Final confirmation: full-computer access',
+    message: 'Enable full-computer access for the next remote connection?',
+    detail: 'This session-only mode can expose private files, source code, and credentials to Arena if requested. Reads do not require per-file approval. Writes require local approval in Ask mode. Combining with No-Ask is a separate high-risk flow: exact warning, 30-second lockout, slide-to-unlock, and another native confirmation. The app rotates the pairing key when the mode changes and resets full-computer access when the link stops, the key rotates, the workspace changes, or the app closes.',
+    buttons: ['Keep workspace confinement', 'Enable EXTREMELY DANGEROUS mode'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  return final.response === 1;
+}
+
+async function beginFullComputerNoAskUnlock() {
+  if (combinedAccessUnlockStarting) throw new Error('A combined-mode warning is already open. Finish or cancel it first.');
+  combinedAccessUnlockStarting = true;
+  try {
+    return await runFullComputerNoAskUnlockFlow();
+  } finally {
+    combinedAccessUnlockStarting = false;
+  }
+}
+
+async function runFullComputerNoAskUnlockFlow() {
+  if (!fullComputerAccess) throw new Error('Enable full-computer access first, then request the combined-mode unlock locally.');
+  if (permissionMode === 'no-ask') throw new Error('No-Ask mode is already active.');
+  const now = process.hrtime.bigint();
+  if (combinedAccessUnlockChallenge && now <= combinedAccessUnlockChallenge.expiresAt) {
+    throw new Error('A combined-mode unlock is already in progress. Finish or cancel it first.');
+  }
+  combinedAccessUnlockChallenge = null;
+  if (tunnelListener || tunnelStartPromise || tunnelStopPromise) {
+    throw new Error('Stop the remote connection before requesting the combined-mode unlock.');
+  }
+  if ([...(api?.getTasks() || [])].some((task) => ['running', 'preparing', 'awaiting_approval'].includes(task.status))) {
+    throw new Error('Wait for all active requests to finish before starting the combined-mode unlock.');
+  }
+  const initialScope = { workspaceRoot, permissionMode, pairingToken };
+
+  const first = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'EXTREMELY DANGEROUS · FULL COMPUTER + NO-ASK',
+    message: FULL_NO_ASK_WARNING,
+    detail: 'This combines unrestricted file-tool scope with automatic writes and shell commands. Reads can expose private data and credentials to Arena.ai; writes and commands run without per-action approval as your OS account. This is not a sandbox and may permanently destroy data. The next step waits 30 seconds and requires a local slide-to-unlock; a final native confirmation is still required. Use only a disposable test computer you are willing to lose.',
+    buttons: ['Cancel', 'I understand — begin 30-second lockout'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  if (first.response !== 1) return null;
+
+  const stillInInitialScope = fullComputerAccess
+    && permissionMode === initialScope.permissionMode && permissionMode !== 'no-ask'
+    && workspaceRoot === initialScope.workspaceRoot && pairingToken === initialScope.pairingToken;
+  const hasActiveTasks = [...(api?.getTasks() || [])].some((task) => ['running', 'preparing', 'awaiting_approval'].includes(task.status));
+  if (!stillInInitialScope || tunnelListener || tunnelStartPromise || tunnelStopPromise || hasActiveTasks) {
+    throw new Error('The local access state changed. No-Ask was not enabled; start the warning sequence again while disconnected.');
+  }
+
+  const startedAt = process.hrtime.bigint();
+  const challengeId = crypto.randomBytes(24).toString('base64url');
+  combinedAccessUnlockChallenge = {
+    id: challengeId,
+    startedAt,
+    expiresAt: startedAt + FULL_NO_ASK_CHALLENGE_TTL_NS,
+    workspaceRoot,
+    permissionMode,
+    pairingToken,
+  };
+  return { challengeId, waitMs: FULL_NO_ASK_WAIT_MS, expiresInMs: FULL_NO_ASK_CHALLENGE_TTL_MS };
+}
+
+async function confirmCombinedFullNoAskStart() {
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'FINAL LINK WARNING · EXTREMELY DANGEROUS',
+    message: FULL_NO_ASK_WARNING,
+    detail: 'Starting this public HTTPS tunnel exposes full-computer file reads and unapproved file writes/shell commands to anyone holding the pairing key. The OS account is not sandboxed. Only start on a disposable test computer with no personal files or credentials. Stop the link immediately when finished.',
+    buttons: ['Cancel connection', 'Start FULL PC + NO-ASK link'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  return result.response === 1;
+}
+
 async function startLocalApi() {
   api = createRemoteApi({
     getWorkspaceRoot: () => workspaceRoot,
     getPairingToken: () => pairingToken,
     getPermissionMode: () => permissionMode,
+    getFullComputerAccess: () => fullComputerAccess,
+    getFullComputerNoAskAuthorized: () => fullComputerNoAskAuthorized,
     onUpdate: publishState,
   });
   await new Promise((resolve, reject) => {
@@ -171,6 +313,10 @@ async function startLocalApi() {
 
 async function startTunnel() {
   if (finishingQuit) throw new Error('Arena Local is closing.');
+  if (combinedAccessUnlockStarting || combinedAccessUnlockChallenge) throw new Error('Finish or cancel the local combined-mode unlock before starting the remote link.');
+  if (fullComputerAccess && permissionMode === 'no-ask' && !fullComputerNoAskAuthorized) {
+    throw new Error('The local 30-second safety unlock is required for full-computer No-Ask mode.');
+  }
   if (tunnelStopPromise) await tunnelStopPromise;
   if (tunnelListener) return snapshot();
   if (tunnelStartPromise) {
@@ -184,6 +330,13 @@ async function startTunnel() {
   const attempt = (async () => {
     let listener = null;
     try {
+      if (fullComputerAccess && permissionMode === 'no-ask') {
+        if (!(await confirmCombinedFullNoAskStart())) throw new Error('The full-computer No-Ask connection was cancelled.');
+        if (!fullComputerAccess || permissionMode !== 'no-ask' || !fullComputerNoAskAuthorized) {
+          throw new Error('The combined access state changed. No remote connection was started.');
+        }
+      }
+      if (generation !== tunnelGeneration || finishingQuit) throw new Error('Connection attempt was cancelled.');
       const ngrokModule = await import('@ngrok/ngrok');
       const ngrok = ngrokModule.default || ngrokModule;
       listener = await ngrok.forward({ addr: `127.0.0.1:${apiPort}`, authtoken: ngrokAuthtoken });
@@ -214,6 +367,15 @@ async function startTunnel() {
   publishState();
   try {
     await attempt;
+  } catch (error) {
+    if (clearFullComputerAccess()) {
+      if (permissionMode === 'no-ask') {
+        permissionMode = 'ask';
+        await savePreferences().catch((saveError) => console.error(`[arena-local] Could not persist safe permission mode: ${saveError.message}`));
+      }
+      publishState();
+    }
+    throw error;
   } finally {
     if (tunnelStartPromise === attempt) {
       tunnelStartPromise = null;
@@ -235,6 +397,7 @@ async function stopTunnel(reason = 'Remote connection stopped on this computer.'
 
     api?.cancelPendingChanges(reason);
     api?.clearApprovedActions();
+    clearFullComputerAccess();
     if (permissionMode === 'no-ask') {
       permissionMode = 'ask';
       await savePreferences().catch((error) => console.error(`[arena-local] Could not persist safe permission mode: ${error.message}`));
@@ -276,17 +439,27 @@ function registerIpcHandlers() {
       : 'ngrok authtoken is available until the app closes; OS secure storage was unavailable.' };
   });
   ipcMain.handle('arena:forget-ngrok-token', async () => {
-    if (tunnelListener || tunnelStartPromise || tunnelStopPromise || permissionMode === 'no-ask') await stopTunnel('ngrok credentials were removed.');
+    if (tunnelListener || tunnelStartPromise || tunnelStopPromise || permissionMode === 'no-ask' || fullComputerAccess) await stopTunnel('ngrok credentials were removed.');
     ngrokAuthtoken = '';
     savedEncryptedNgrokToken = '';
     await savePreferences();
     publishState();
     return { forgotten: true };
   });
-  ipcMain.handle('arena:start-tunnel', () => startTunnel());
-  ipcMain.handle('arena:stop-tunnel', () => stopTunnel());
-  ipcMain.handle('arena:rotate-pairing-token', async () => {
+  ipcMain.handle('arena:start-tunnel', (event) => {
+    assertTrustedUiEvent(event);
+    return startTunnel();
+  });
+  ipcMain.handle('arena:stop-tunnel', (event) => {
+    assertTrustedUiEvent(event);
+    return stopTunnel();
+  });
+  ipcMain.handle('arena:rotate-pairing-token', async (event) => {
+    assertTrustedUiEvent(event);
     pairingToken = createPairingToken();
+    fullComputerAccess = false;
+    fullComputerNoAskAuthorized = false;
+    combinedAccessUnlockChallenge = null;
     api?.cancelPendingChanges('Pairing token rotated by the user.');
     api?.clearApprovedActions();
     if (permissionMode === 'no-ask') {
@@ -305,11 +478,113 @@ function registerIpcHandlers() {
     clipboard.writeText(tunnelUrl);
     return { copied: true };
   });
-  ipcMain.handle('arena:set-permission-mode', async (_event, mode) => {
+  ipcMain.handle('arena:set-full-computer-access', async (event, enabled) => {
+    assertTrustedUiEvent(event);
+    if (typeof enabled !== 'boolean') throw new Error('Full-computer access must be enabled or disabled.');
+    if (enabled === fullComputerAccess) return snapshot();
+    if (tunnelListener || tunnelStartPromise || tunnelStopPromise) {
+      throw new Error('Stop the remote connection before changing file-access scope. This takes effect on the next connection.');
+    }
+    const active = api?.getTasks().some((task) => ['running', 'preparing', 'awaiting_approval'].includes(task.status));
+    if (active) throw new Error('Wait for active requests to finish before changing file-access scope.');
+    if (enabled && permissionMode === 'no-ask') {
+      throw new Error('Switch to Ask or Read only before enabling full-computer access. The combined mode has its own local 30-second unlock.');
+    }
+    if (enabled) {
+      if (!(await confirmFullComputerAccess())) return snapshot();
+      const activeAfterWarning = api?.getTasks().some((task) => ['running', 'preparing', 'awaiting_approval'].includes(task.status));
+      if (tunnelListener || tunnelStartPromise || tunnelStopPromise || activeAfterWarning || permissionMode === 'no-ask') {
+        throw new Error('The local access state changed while the warning was open. Full-computer access was not enabled.');
+      }
+    }
+
+    if (enabled) {
+      fullComputerAccess = true;
+      fullComputerNoAskAuthorized = false;
+      combinedAccessUnlockChallenge = null;
+      pairingToken = createPairingToken();
+    } else {
+      clearFullComputerAccess();
+      if (permissionMode === 'no-ask') permissionMode = 'ask';
+    }
+    api?.cancelPendingChanges(`Full-computer access was ${enabled ? 'enabled' : 'disabled'}; the pairing key was rotated.`);
+    api?.clearApprovedActions();
+    publishState();
+    return snapshot();
+  });
+  ipcMain.handle('arena:begin-full-computer-no-ask-unlock', (event) => {
+    assertTrustedUiEvent(event);
+    return beginFullComputerNoAskUnlock();
+  });
+  ipcMain.handle('arena:cancel-full-computer-no-ask-unlock', (event, challengeId) => {
+    assertTrustedUiEvent(event);
+    if (combinedAccessUnlockChallenge?.id === challengeId) combinedAccessUnlockChallenge = null;
+    return { cancelled: true };
+  });
+  ipcMain.handle('arena:complete-full-computer-no-ask-unlock', async (event, challengeId) => {
+    assertTrustedUiEvent(event);
+    const challenge = combinedAccessUnlockChallenge;
+    if (!challenge || challenge.id !== challengeId) throw new Error('This combined-mode unlock is no longer valid. Start again locally.');
+    const nowMonotonic = process.hrtime.bigint();
+    if (nowMonotonic - challenge.startedAt < FULL_NO_ASK_WAIT_NS) {
+      throw new Error('The full 30-second safety wait has not finished yet.');
+    }
+    if (nowMonotonic > challenge.expiresAt) {
+      combinedAccessUnlockChallenge = null;
+      throw new Error('The safety unlock expired. Start the full warning sequence again.');
+    }
+    const connectionActive = Boolean(tunnelListener || tunnelStartPromise || tunnelStopPromise);
+    const activeTasks = [...(api?.getTasks() || [])].some((task) => ['running', 'preparing', 'awaiting_approval'].includes(task.status));
+    const permissionModeUnchanged = permissionMode === challenge.permissionMode && permissionMode !== 'no-ask';
+    const scopeUnchanged = fullComputerAccess && permissionModeUnchanged
+      && workspaceRoot === challenge.workspaceRoot && pairingToken === challenge.pairingToken;
+    if (connectionActive || activeTasks || !scopeUnchanged) {
+      combinedAccessUnlockChallenge = null;
+      throw new Error('The local access state changed. No-Ask was not enabled; start the unlock again while disconnected.');
+    }
+
+    const keepModeLabel = challenge.permissionMode === 'read-only' ? 'Cancel — keep Read only' : 'Cancel — keep Ask mode';
+    const final = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: 'FINAL CONFIRMATION · EXTREMELY DANGEROUS',
+      message: FULL_NO_ASK_WARNING,
+      detail: 'You are about to expose full-computer file access plus automatic writes and shell commands to the next Arena connection. Nothing is sandboxed from this OS account. A copied pairing key can trigger actions until you stop the link or rotate the key. This setting is temporary and will not survive a connection stop or app restart.',
+      buttons: [keepModeLabel, 'Enable FULL PC + NO-ASK'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    const stillValid = combinedAccessUnlockChallenge === challenge
+      && process.hrtime.bigint() <= challenge.expiresAt
+      && !tunnelListener && !tunnelStartPromise && !tunnelStopPromise
+      && ![...(api?.getTasks() || [])].some((task) => ['running', 'preparing', 'awaiting_approval'].includes(task.status))
+      && fullComputerAccess && permissionMode === challenge.permissionMode && permissionMode !== 'no-ask'
+      && workspaceRoot === challenge.workspaceRoot && pairingToken === challenge.pairingToken;
+    combinedAccessUnlockChallenge = null;
+    if (final.response !== 1 || !stillValid) {
+      if (!stillValid && final.response === 1) throw new Error('The local access state changed. No-Ask was not enabled.');
+      return snapshot();
+    }
+
+    permissionMode = 'no-ask';
+    fullComputerNoAskAuthorized = true;
+    pairingToken = createPairingToken();
+    api?.cancelPendingChanges('EXTREMELY DANGEROUS full-computer No-Ask mode was enabled.');
+    api?.clearApprovedActions();
+    publishState();
+    return snapshot();
+  });
+  ipcMain.handle('arena:set-permission-mode', async (event, mode) => {
+    assertTrustedUiEvent(event);
     if (!['ask', 'read-only', 'no-ask'].includes(mode)) throw new Error('Unsupported permission mode.');
+    if (mode === 'no-ask' && fullComputerAccess) {
+      throw new Error('Use the local 30-second slide-to-unlock flow to combine full-computer access with No-Ask.');
+    }
     if (mode === 'no-ask' && permissionMode !== 'no-ask' && !(await confirmNoAskMode())) return snapshot();
     if (permissionMode !== mode) {
       const previousMode = permissionMode;
+      combinedAccessUnlockChallenge = null;
+      fullComputerNoAskAuthorized = false;
       permissionMode = mode;
       api?.cancelPendingChanges(mode === 'read-only' ? 'Blocked because Read only mode was enabled.' : 'Permission mode changed.');
       api?.clearApprovedActions();
@@ -340,6 +615,7 @@ function registerIpcHandlers() {
     });
     if (result.canceled || !result.filePaths[0]) return snapshot();
     workspaceRoot = await resolveWorkspaceRoot(result.filePaths[0]);
+    clearFullComputerAccess();
     api?.clearApprovedActions();
     if (permissionMode === 'no-ask') permissionMode = 'ask';
     await savePreferences();

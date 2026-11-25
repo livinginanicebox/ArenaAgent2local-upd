@@ -24,10 +24,14 @@ async function makeFixture(t, initialMode = 'ask') {
   const workspaceRoot = await resolveWorkspaceRoot(workspacePath);
   let token = 'A'.repeat(43);
   let mode = initialMode;
+  let fullComputerAccess = false;
+  let fullComputerNoAskAuthorized = false;
   const api = createRemoteApi({
     getWorkspaceRoot: () => workspaceRoot,
     getPairingToken: () => token,
     getPermissionMode: () => mode,
+    getFullComputerAccess: () => fullComputerAccess,
+    getFullComputerNoAskAuthorized: () => fullComputerNoAskAuthorized,
   });
   const port = await listen(api.server);
   const base = `http://127.0.0.1:${port}`;
@@ -43,6 +47,8 @@ async function makeFixture(t, initialMode = 'ask') {
     headers,
     workspaceRoot,
     setMode: (value) => { mode = value; },
+    setFullComputerAccess: (value) => { fullComputerAccess = value; },
+    setFullComputerNoAskAuthorized: (value) => { fullComputerNoAskAuthorized = value; },
     setToken: (value) => { token = value; headers.authorization = `Bearer ${value}`; },
   };
 }
@@ -94,7 +100,9 @@ test('remote bridge requires its bearer key and supports scoped read requests', 
 
   const health = await fetch(`${fixture.base}/v1/health`, { headers: { authorization: fixture.headers.authorization } });
   assert.equal(health.status, 200);
-  assert.equal((await health.json()).permissionMode, 'ask');
+  const healthState = await health.json();
+  assert.equal(healthState.permissionMode, 'ask');
+  assert.equal(healthState.fullComputerAccess, false);
 });
 
 test('writes are visible in the desktop queue and run only after approval', async (t) => {
@@ -118,6 +126,81 @@ test('writes are visible in the desktop queue and run only after approval', asyn
   const completed = await waitForTask(fixture, queued.taskId, (task) => task.status === 'completed');
   assert.equal(completed.result.written, true);
   assert.equal(await fs.readFile(path.join(fixture.workspaceRoot, 'notes.txt'), 'utf8'), 'approved from desktop\n');
+});
+
+test('full-computer access reads absolute paths and still requires Ask approval for outside writes', async (t) => {
+  const fixture = await makeFixture(t);
+  const outsidePath = path.join(path.dirname(fixture.workspaceRoot), 'outside.txt');
+  await fs.writeFile(outsidePath, 'outside before\n');
+
+  const deniedRead = await postTask(fixture, {
+    requestId: 'outside-read-off-01',
+    action: 'read_file',
+    args: { path: outsidePath },
+  });
+  const deniedReadTask = await waitForTask(fixture, (await deniedRead.json()).taskId, (task) => task.status === 'error');
+  assert.match(deniedReadTask.error, /Absolute paths/i);
+
+  fixture.setFullComputerAccess(true);
+  const health = await fetch(`${fixture.base}/v1/health`, { headers: { authorization: fixture.headers.authorization } });
+  assert.equal((await health.json()).fullComputerAccess, true);
+  const readResponse = await postTask(fixture, {
+    requestId: 'outside-read-on-01',
+    action: 'read_file',
+    args: { path: outsidePath },
+  });
+  const readTask = await waitForTask(fixture, (await readResponse.json()).taskId, (task) => task.status === 'completed');
+  assert.equal(readTask.result.path, outsidePath);
+  assert.equal(readTask.result.content, 'outside before\n');
+
+  const writeResponse = await postTask(fixture, {
+    requestId: 'outside-write-001',
+    action: 'write_file',
+    args: { path: outsidePath, content: 'outside after approval\n' },
+  });
+  const queued = await writeResponse.json();
+  assert.equal(queued.status, 'awaiting_approval');
+  const desktopTask = fixture.api.getTasks().find((task) => task.taskId === queued.taskId);
+  assert.equal(desktopTask.preview.outsideWorkspace, true);
+  assert.equal(desktopTask.preview.path, outsidePath);
+  assert.equal(await fs.readFile(outsidePath, 'utf8'), 'outside before\n');
+
+  await fixture.api.approveTask(queued.taskId, 'approve');
+  const completed = await waitForTask(fixture, queued.taskId, (task) => task.status === 'completed');
+  assert.equal(completed.fullComputerAccess, true);
+  assert.equal(completed.result.path, outsidePath);
+  assert.equal(await fs.readFile(outsidePath, 'utf8'), 'outside after approval\n');
+
+  fixture.setMode('no-ask');
+  const blockedNoAskReadResponse = await postTask(fixture, {
+    requestId: 'outside-noask-read-01',
+    action: 'read_file',
+    args: { path: outsidePath },
+  });
+  const blockedNoAskRead = await blockedNoAskReadResponse.json();
+  assert.equal(blockedNoAskRead.status, 'denied');
+  assert.match(blockedNoAskRead.message, /local 30-second safety unlock/i);
+
+  const blockedAutoWrite = await postTask(fixture, {
+    requestId: 'outside-noask-001',
+    action: 'write_file',
+    args: { path: outsidePath, content: 'must not run' },
+  });
+  assert.equal((await blockedAutoWrite.json()).status, 'denied');
+  assert.equal(await fs.readFile(outsidePath, 'utf8'), 'outside after approval\n');
+
+  fixture.setFullComputerNoAskAuthorized(true);
+  const authorizedAutoWrite = await postTask(fixture, {
+    requestId: 'outside-noask-002',
+    action: 'write_file',
+    args: { path: outsidePath, content: 'full computer plus no-ask\n' },
+  });
+  const autoQueued = await authorizedAutoWrite.json();
+  assert.equal(autoQueued.autoApproved, true);
+  const autoCompleted = await waitForTask(fixture, autoQueued.taskId, (task) => task.status === 'completed');
+  assert.equal(autoCompleted.fullComputerAccess, true);
+  assert.equal(autoCompleted.autoApproved, true);
+  assert.equal(await fs.readFile(outsidePath, 'utf8'), 'full computer plus no-ask\n');
 });
 
 test('shell commands wait for desktop approval in Ask mode', async (t) => {
@@ -244,6 +327,38 @@ test('read-only mode blocks mutations; exact-session approval is scoped to the e
     requestId: 'new-content-task-01', action: 'write_file', args: { path: 'allowed.txt', content: 'different content' },
   });
   assert.equal((await different.json()).status, 'awaiting_approval');
+});
+
+test('remote task API cannot enable full-computer or No-Ask modes', async (t) => {
+  const fixture = await makeFixture(t);
+  const modeSwitch = await postTask(fixture, {
+    requestId: 'remote-mode-001',
+    action: 'set_permission_mode',
+    args: { mode: 'no-ask' },
+  });
+  assert.equal(modeSwitch.status, 400);
+
+  const injectedScope = await postTask(fixture, {
+    requestId: 'remote-mode-002',
+    action: 'list_files',
+    args: { path: '.', fullComputerAccess: true, fullComputerNoAskAuthorized: true },
+  });
+  assert.equal(injectedScope.status, 400);
+
+  const injectedMode = await postTask(fixture, {
+    requestId: 'remote-mode-003',
+    action: 'read_file',
+    args: { path: 'README.md' },
+    permissionMode: 'no-ask',
+    fullComputerAccess: true,
+    fullComputerNoAskAuthorized: true,
+  });
+  assert.equal(injectedMode.status, 400);
+
+  const health = await fetch(`${fixture.base}/v1/health`, { headers: { authorization: fixture.headers.authorization } });
+  const healthState = await health.json();
+  assert.equal(healthState.fullComputerAccess, false);
+  assert.equal(healthState.permissionMode, 'ask');
 });
 
 test('invalid actions, traversal, and changed pairing tokens are rejected', async (t) => {
