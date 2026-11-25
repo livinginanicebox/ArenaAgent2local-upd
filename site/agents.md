@@ -12,8 +12,8 @@ File tools are restricted to the selected workspace. File operations reject abso
 
 ## Start each session safely
 
-1. Read the current Base URL, bearer key, selected workspace, and permission mode from the setup prompt.
-2. Check the current connection and permission mode with `GET /v1/health` before doing substantial work.
+1. Read the current Base URL, bearer key, and permission mode from the setup prompt. The selected workspace is shown in Arena Local's desktop window, not revealed by the public guide.
+2. Check the bridge connection and current permission mode with authenticated `GET /v1/health` before doing substantial work. This endpoint confirms the workspace is connected but does not return its local path.
 3. Use the supplied Base URL and bearer key only in the `Authorization` header. Keep the key in the current shell session; never put it in a URL, file, commit, search query, public guide, or final response.
 4. Start with a narrow directory listing or search. Read only the files relevant to the user's request.
 5. Follow the live mode:
