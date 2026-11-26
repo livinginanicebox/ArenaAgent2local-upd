@@ -84,6 +84,7 @@ body::before {
 .nav-item.active { color: #f0fbff; border-color: rgba(105, 213, 255, .26); background: linear-gradient(90deg, rgba(39, 133, 208, .29), rgba(47, 105, 170, .12)); box-shadow: inset 2px 0 #51d8ff; }
 .nav-icon { color: #75dcff; font-size: 15px; }
 .nav-dot.live { background: #76f0bd; }
+.nav-dot.paused { background: #ffd17d; box-shadow: 0 0 8px rgba(255,209,125,.5); }
 .nav-count { border-radius: 3px; color: #b8cbe0; }
 .sidebar-security { border-color: rgba(102, 168, 222, .2); border-radius: 4px; background: linear-gradient(145deg, rgba(18, 43, 78, .94), rgba(11, 24, 45, .95)); box-shadow: inset 0 1px rgba(255, 255, 255, .045); }
 .security-icon { color: #83e5ff; border: 1px solid rgba(90, 205, 255, .25); border-radius: 4px; background: linear-gradient(145deg, rgba(47, 143, 207, .26), rgba(25, 57, 106, .44)); }
@@ -116,6 +117,7 @@ body::before {
   font-size: 8px;
 }
 .connection-pill.live { color: #eafff5; border-color: rgba(179, 255, 223, .48); background: rgba(10, 92, 77, .36); }
+.connection-pill.paused { color: #fff0cf; border-color: rgba(255, 213, 137, .58); background: rgba(126, 80, 12, .43); }
 .connection-pill.connecting { color: #fff2ca; background: rgba(105, 73, 19, .33); }
 .icon-button { color: #effaff; border-radius: 3px; }
 .icon-button:hover { color: #fff; border-color: rgba(255, 255, 255, .33); background: rgba(5, 43, 94, .3); }
@@ -209,6 +211,8 @@ body::before {
 .live-connection-main strong { color: #e1faff; font-size: 11px; }
 .live-connection-main small { color: #a2c2d7; font-size: 9px; }
 .live-tag { color: #b8f8ff; border-color: rgba(107, 221, 255, .42); background: rgba(29, 136, 196, .2); font-size: 7px; }
+.live-tag.paused { color: #fff0cf; border-color: rgba(255, 213, 137, .58); background: rgba(126, 80, 12, .38); }
+.control-pause-notice { border-radius: 3px; color: #ffe0a5; border-color: rgba(255, 213, 137, .42); background: linear-gradient(120deg, rgba(117,76,18,.25), rgba(35,29,30,.48)); font-size: 9px; }
 .url-row { border-color: rgba(113, 182, 231, .2); background: #08172e; }
 .url-label { color: #93adc7; font-size: 7px; }
 .url-row code { color: #8eeaff; font-size: 9px; }
@@ -342,6 +346,7 @@ body::before {
 .roblox-mcp-status[data-state="connected"] { color: #a7f0d1; border-color: rgba(106, 230, 177, .3); }
 .roblox-mcp-status[data-state="connected"] .roblox-mcp-status-dot { background: #73e6b2; box-shadow: 0 0 0 3px rgba(115, 230, 178, .15); }
 .roblox-mcp-status[data-state="error"], .roblox-mcp-status[data-state="unsupported"] { color: #ffc3c7; border-color: rgba(255, 126, 136, .3); }
+.roblox-mcp-status[data-state="disabled"] { color: #c5b7ef; border-color: rgba(164, 142, 229, .3); }
 .roblox-mcp-status[data-state="error"] .roblox-mcp-status-dot, .roblox-mcp-status[data-state="unsupported"] .roblox-mcp-status-dot { background: #ff858e; box-shadow: 0 0 0 3px rgba(255, 133, 142, .14); }
 .roblox-mcp-error { margin: -4px 0 0; color: #ffb4bc; font-size: 9px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .roblox-mcp-actions { display: flex; align-items: center; gap: 8px; }

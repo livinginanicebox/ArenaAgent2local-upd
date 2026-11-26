@@ -1,5 +1,6 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
+import path from 'node:path';
 import {
   actionFingerprint,
   CHANGE_TOOLS,
@@ -25,10 +26,12 @@ const RATE_LIMIT_PER_MINUTE = 240;
 const MAX_ROBLOX_ARGS_BYTES = 256 * 1024;
 const MAX_ROBLOX_STUDIO_ID_LENGTH = 512;
 const ROBLOX_STUDIO_DISCOVERY_TOOL = 'list_roblox_studios';
+const CONTROL_PAUSED_MESSAGE = 'Remote control is paused on this computer. The link and pairing key are unchanged; only health checks are available until the user resumes control locally.';
 const ACTIONS = new Set([
   'list_files', 'read_file', 'search_text', 'write_file', 'run_command', 'roblox_tool',
   'git_status', 'git_diff', 'git_log', 'git_commit', 'list_processes',
 ]);
+const GIT_ACTIONS = new Set(['git_status', 'git_diff', 'git_log', 'git_commit']);
 const REQUEST_ID_PATTERN = /^[a-zA-Z0-9._:-]{8,100}$/;
 
 class HttpError extends Error {
@@ -124,8 +127,9 @@ function validateTaskBody(body) {
       if (Buffer.byteLength(args.content, 'utf8') > 256 * 1024) throw new HttpError(413, 'File content is limited to 256 KB.');
       break;
     case 'run_command':
-      allowedKeys = ['command'];
+      allowedKeys = ['command', 'cwd'];
       args = { command: boundedString(input.command, 'command', 2_000) };
+      if (input.cwd !== undefined) args.cwd = boundedString(input.cwd, 'cwd', 1_000);
       if (args.command.includes('\0')) throw new HttpError(400, 'command cannot contain null characters.');
       break;
     case 'git_status':
@@ -290,6 +294,9 @@ function taskNeedsApproval(task) {
 
 export function createRemoteApi({
   getWorkspaceRoot,
+  getGitWorkspaceRoot = getWorkspaceRoot,
+  getGitIntegrationEnabled = () => true,
+  getRobloxMcpEnabled = () => true,
   getPairingToken,
   getPermissionMode,
   getFullComputerAccess = () => false,
@@ -305,6 +312,8 @@ export function createRemoteApi({
   const approvedActions = new Map();
   const approvedActionNames = new Map();
   let approvalEpoch = 0;
+  let controlPaused = false;
+  let controlEpoch = 0;
   let rateWindowStart = Date.now();
   let rateCount = 0;
 
@@ -312,7 +321,22 @@ export function createRemoteApi({
     try { onUpdate(); } catch { /* UI may not be ready during startup/shutdown. */ }
   }
 
+  function assertControlActive(expectedEpoch = controlEpoch) {
+    if (controlPaused || expectedEpoch !== controlEpoch) throw new HttpError(423, CONTROL_PAUSED_MESSAGE);
+  }
+
+  function setControlPaused(paused) {
+    if (typeof paused !== 'boolean') throw new Error('Remote control pause state must be a boolean.');
+    if (paused === controlPaused) return controlPaused;
+    controlPaused = paused;
+    controlEpoch += 1;
+    if (controlPaused) cancelPendingChanges('Remote control was paused locally. Pending approvals were cancelled; actions already running may finish.');
+    else changed();
+    return controlPaused;
+  }
+
   function currentRobloxMcpState() {
+    if (!getRobloxMcpEnabled()) return { status: 'disabled', error: 'Roblox Studio MCP is disabled locally in Arena Local.', toolCount: 0 };
     try { return getRobloxMcpState() || { status: 'disconnected' }; }
     catch { return { status: 'error', error: 'Could not read Roblox Studio MCP status.' }; }
   }
@@ -327,6 +351,7 @@ export function createRemoteApi({
   }
 
   async function refreshRobloxTools() {
+    if (!getRobloxMcpEnabled()) throw new HttpError(503, 'Roblox Studio MCP is disabled locally in Arena Local.');
     try { await refreshRobloxMcpTools(); }
     catch (error) { throw new HttpError(503, `Could not refresh Roblox Studio tools: ${error.message || 'MCP connection failed.'}`); }
     const state = currentRobloxMcpState();
@@ -372,9 +397,15 @@ export function createRemoteApi({
     try {
       let result;
       if (task.action === 'roblox_tool') {
+        if (!getRobloxMcpEnabled()) throw new Error('Roblox Studio MCP was disabled locally before this action could run.');
         result = await callRobloxMcpTool(task.args.name, task.args.arguments);
-      } else if (task.action === 'git_commit') {
-        result = await executeGitCommit(getWorkspaceRoot(), task.args.message, expectedGitCommitFingerprint);
+      } else if (GIT_ACTIONS.has(task.action)) {
+        if (!getGitIntegrationEnabled()) throw new Error('Local Git integration was disabled before this action could run.');
+        const gitRoot = getGitWorkspaceRoot();
+        if (!gitRoot) throw new Error('No local Git workspace is selected. Choose a repository in Arena Local before requesting Git actions.');
+        result = task.action === 'git_commit'
+          ? await executeGitCommit(gitRoot, task.args.message, expectedGitCommitFingerprint)
+          : await executeLocalReadTool(gitRoot, task.action, task.args);
       } else if (LOCAL_READ_TOOLS.has(task.action)) {
         result = await executeLocalReadTool(getWorkspaceRoot(), task.action, task.args);
       } else {
@@ -383,6 +414,7 @@ export function createRemoteApi({
           ? await executeMutationTool(root, task.action, task.args, {
             expectedWriteState,
             fullComputerAccess: task.fullComputerAccess,
+            cwd: task.args.cwd,
           })
           : await executeReadTool(root, task.action, task.args, { fullComputerAccess: task.fullComputerAccess });
       }
@@ -416,6 +448,17 @@ export function createRemoteApi({
     if (cleared) approvalEpoch += 1;
   }
 
+  function clearApprovedGitActions() {
+    let cleared = false;
+    for (const [fingerprint, action] of approvedActionNames) {
+      if (!GIT_ACTIONS.has(action)) continue;
+      approvedActions.delete(fingerprint);
+      approvedActionNames.delete(fingerprint);
+      cleared = true;
+    }
+    if (cleared) approvalEpoch += 1;
+  }
+
   function clearApprovalTimeout(task) {
     if (task.approvalTimeout) clearTimeout(task.approvalTimeout);
     task.approvalTimeout = null;
@@ -428,8 +471,17 @@ export function createRemoteApi({
   }
 
   async function approveTask(taskId, decision) {
+    if (controlPaused) throw new Error(CONTROL_PAUSED_MESSAGE);
     const task = tasks.get(taskId);
     if (!task || task.status !== 'awaiting_approval') throw new Error('This request is no longer waiting for approval.');
+    if (GIT_ACTIONS.has(task.action) && !getGitIntegrationEnabled()) {
+      denyTask(task, 'Local Git integration was disabled in Arena Local.', 'cancelled');
+      return safeDesktopTask(task);
+    }
+    if (task.action === 'roblox_tool' && !getRobloxMcpEnabled()) {
+      denyTask(task, 'Roblox Studio MCP was disabled in Arena Local.', 'cancelled');
+      return safeDesktopTask(task);
+    }
     if (!['approve', 'approve_session', 'deny'].includes(decision)) throw new Error('Choose approve, allow exact action for this session, or deny.');
     if (task.action === 'git_commit' && decision === 'approve_session') {
       throw new Error('Git commits must be approved one at a time because staged changes can change between requests.');
@@ -460,7 +512,28 @@ export function createRemoteApi({
     return safeDesktopTask(task);
   }
 
-  async function createTask(request) {
+  async function createTask(request, expectedControlEpoch = controlEpoch) {
+    assertControlActive(expectedControlEpoch);
+    if (GIT_ACTIONS.has(request.action)) {
+      if (!getGitIntegrationEnabled()) throw new HttpError(503, 'Local Git integration is disabled in Arena Local.');
+      if (!getGitWorkspaceRoot()) throw new HttpError(503, 'No local Git workspace is selected. Choose a repository in Arena Local before requesting Git actions.');
+    }
+    const remoteWorkspaceRoot = getWorkspaceRoot();
+    if (getFullComputerAccess() && !remoteWorkspaceRoot && ['list_files', 'read_file', 'search_text', 'write_file'].includes(request.action)
+      && !path.isAbsolute(request.args.path || '')) {
+      throw new HttpError(400, 'Full-computer mode has no selected workspace; file actions require an explicit absolute path.');
+    }
+    if (request.action === 'run_command') {
+      if (!remoteWorkspaceRoot && getFullComputerAccess() && !path.isAbsolute(request.args.cwd || '')) {
+        throw new HttpError(400, 'Full-computer mode has no selected workspace; run_command requires an explicit absolute cwd.');
+      }
+      if (request.args.cwd !== undefined && (remoteWorkspaceRoot || !getFullComputerAccess())) {
+        throw new HttpError(400, 'cwd is only accepted as an explicit absolute path in full-computer mode without a workspace.');
+      }
+    }
+    if (request.action === 'roblox_tool' && !getRobloxMcpEnabled()) {
+      throw new HttpError(503, 'Roblox Studio MCP is disabled locally in Arena Local.');
+    }
     trimTasks();
     const requestFingerprint = crypto.createHash('sha256').update(JSON.stringify({ action: request.action, args: request.args })).digest('hex');
     const existingId = requestIndex.get(request.requestId);
@@ -474,6 +547,7 @@ export function createRemoteApi({
     let robloxToolDescription = null;
     if (request.action === 'roblox_tool') {
       await refreshRobloxTools();
+      assertControlActive(expectedControlEpoch);
       const mcpState = currentRobloxMcpState();
       if (mcpState.status !== 'connected') {
         throw new HttpError(503, mcpState.error || 'Roblox Studio MCP is not connected. Connect it in the Arena Local desktop app first.');
@@ -613,6 +687,16 @@ export function createRemoteApi({
     changed();
   }
 
+  function cancelPendingGitTasks(reason = 'Local Git integration was disabled.') {
+    for (const task of tasks.values()) {
+      if (GIT_ACTIONS.has(task.action) && (task.status === 'awaiting_approval' || task.status === 'preparing')) {
+        denyTask(task, reason, 'cancelled');
+      }
+    }
+    clearApprovedGitActions();
+    changed();
+  }
+
   function getDesktopTasks() {
     trimTasks();
     return sortNewest([...tasks.values()]).slice(0, 30).map(safeDesktopTask);
@@ -624,13 +708,24 @@ export function createRemoteApi({
     authorize(req, getPairingToken);
     consumeRateLimit();
 
-    if (req.method === 'GET' && url.pathname === '/v1/health') {
+    const healthRequest = req.method === 'GET' && url.pathname === '/v1/health';
+    const requestControlEpoch = controlEpoch;
+    if (controlPaused && !healthRequest) {
+      req.resume();
+      throw new HttpError(423, CONTROL_PAUSED_MESSAGE);
+    }
+    if (!healthRequest) assertControlActive(requestControlEpoch);
+
+    if (healthRequest) {
       const robloxState = currentRobloxMcpState();
       return sendJson(res, 200, {
         ok: true,
-        workspace: 'connected',
+        workspace: getWorkspaceRoot() ? 'selected' : 'none',
+        gitWorkspaceSelected: Boolean(getGitWorkspaceRoot()),
+        gitIntegrationEnabled: Boolean(getGitIntegrationEnabled()),
         permissionMode: getPermissionMode(),
         fullComputerAccess: Boolean(getFullComputerAccess()),
+        controlPaused,
         robloxMcp: {
           connected: robloxState.status === 'connected',
           status: robloxState.status,
@@ -639,10 +734,12 @@ export function createRemoteApi({
       });
     }
     if (req.method === 'GET' && url.pathname === '/v1/roblox/tools') {
+      assertControlActive(requestControlEpoch);
       let state = currentRobloxMcpState();
       if (state.status === 'connected') {
         try { await refreshRobloxMcpTools(); }
         catch {
+          assertControlActive(requestControlEpoch);
           state = currentRobloxMcpState();
           return sendJson(res, 503, {
             connected: false,
@@ -651,19 +748,23 @@ export function createRemoteApi({
             tools: [],
           });
         }
+        assertControlActive(requestControlEpoch);
         state = currentRobloxMcpState();
       }
       const tools = state.status === 'connected' ? currentRobloxTools().map(publicRobloxTool) : [];
       return sendJson(res, 200, {
         connected: state.status === 'connected',
         status: state.status,
-        error: state.status === 'connected' ? undefined : 'Roblox Studio MCP is not connected. Check the local Arena Local app for connection details.',
+        error: state.status === 'connected' ? undefined : state.status === 'disabled'
+          ? 'Roblox Studio MCP is disabled locally in Arena Local.'
+          : 'Roblox Studio MCP is not connected. Check the local Arena Local app for connection details.',
         tools,
       });
     }
     if (req.method === 'POST' && url.pathname === '/v1/tasks') {
       const request = validateTaskBody(await readJson(req));
-      const task = await createTask(request);
+      assertControlActive(requestControlEpoch);
+      const task = await createTask(request, requestControlEpoch);
       return sendJson(res, 202, arenaTaskResponse(task));
     }
     const match = /^\/v1\/tasks\/([a-f0-9-]{36})$/i.exec(url.pathname);
@@ -689,6 +790,9 @@ export function createRemoteApi({
     approveTask,
     cancelPendingChanges,
     cancelPendingRobloxTasks,
+    cancelPendingGitTasks,
     clearApprovedActions,
+    setControlPaused,
+    isControlPaused: () => controlPaused,
   };
 }

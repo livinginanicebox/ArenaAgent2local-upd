@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#102a66">
-  <meta name="description" content="Arena Local v0.1.5 adds a Git and GitHub repository workbench, secure token handling, and repository-specific agent instructions.">
+  <meta name="description" content="Arena Local v0.1.6 adds full-computer absolute-path scope, separate local Git/preview selection, local integration toggles, and confirmed GitHub pushes.">
   <meta property="og:title" content="Updates — Arena Local">
-  <meta property="og:description" content="See what's new in Arena Local v0.1.5: a local Git and GitHub repository workbench and secure repository guidance.">
+  <meta property="og:description" content="See what's new in Arena Local v0.1.6: safer full-computer scope, local integration toggles, and confirmed GitHub branch pushes.">
   <title>Updates // Arena Local</title>
   <link rel="canonical" href="https://lumifaye.github.io/ArenaAgent2local/changelog.html">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
@@ -28,8 +28,15 @@
       <main id="main" class="subpage-main">
         <p class="breadcrumb"><a href="./">Home</a><span aria-hidden="true">/</span> Updates</p>
         <section class="page-hero page-hero-compact" aria-labelledby="page-title">
-          <div><p class="eyebrow">RELEASE NOTES / NOVEMBER 25, 2026</p><h1 id="page-title">Local Git.<br><span>More control.</span></h1><p>Version 0.1.5 adds a local Git and GitHub repository workbench, secure read-only repository lookup, and bounded repository-specific agent instructions.</p><div class="hero-inline-links"><a class="page-button page-button-primary" href="./download.html">Get v0.1.5 <span aria-hidden="true">↓</span></a><a class="quiet-link" href="https://github.com/lumifaye/ArenaAgent2local/releases/tag/v0.1.5" target="_blank" rel="noopener noreferrer">Open the release ↗</a></div></div>
-          <div class="release-badge"><span>ARENA LOCAL</span><strong>0.1.5</strong><small>DESKTOP UPDATE<br>WINDOWS X64</small></div>
+          <div><p class="eyebrow">RELEASE NOTES / NOVEMBER 25, 2026</p><h1 id="page-title">Safer scope.<br><span>Local control.</span></h1><p>Version 0.1.6 separates full-computer remote paths from local Git/preview, adds integration kill switches, and enables locally confirmed GitHub branch pushes.</p><div class="hero-inline-links"><a class="page-button page-button-primary" href="./download.html">Get v0.1.6 <span aria-hidden="true">↓</span></a><a class="quiet-link" href="https://github.com/lumifaye/ArenaAgent2local/releases/tag/v0.1.6" target="_blank" rel="noopener noreferrer">Open the release ↗</a></div></div>
+          <div class="release-badge"><span>ARENA LOCAL</span><strong>0.1.6</strong><small>DESKTOP UPDATE<br>WINDOWS X64</small></div>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.6 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.6</span><small>NOV 25, 2026</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-added">ADDED</span><ul><li>Make full-computer remote file access workspace-free: require explicit absolute paths and an absolute shell working directory, while keeping desktop preview and Git on a separately selected local folder.</li><li>Add local Git and Roblox Studio MCP enable/disable controls that block their corresponding local workbenches and remote actions; disabling cancels pending approvals and Studio is disconnected.</li><li>Add locally confirmed GitHub pushes for classic and fine-grained PATs. Review outgoing commits in a native confirmation; no force-push or automatic push occurs.</li><li>Add local pause/resume control that preserves the tunnel URL and pairing key, cancels pending approvals, and returns HTTP 423 for non-health requests while paused; actions already running may finish.</li><li>Document a bounded workflow for transferring only a relevant PNG for visual inspection and deleting the temporary copy afterward.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">HARDENED</span><ul><li>Keep the GitHub PAT out of remotes, Git configuration, and command-line arguments; authenticate through a temporary askpass helper, verify TLS, disable mirror/follow-tags behavior, and push only the reviewed branch commit.</li><li>Redact local Roblox error paths from the remote tool-list response and validate push URLs as credential-free GitHub HTTPS remotes.</li></ul></div>
+          </div></article>
         </section>
 
         <section class="page-section" aria-label="Version 0.1.5 release notes">

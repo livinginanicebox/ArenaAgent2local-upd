@@ -8,8 +8,10 @@ function fakeResponse(data, { ok = true, status = 200 } = {}) {
   return { ok, status, json: async () => data };
 }
 
-test('GitHub token validation accepts tokens without exposing or persisting them', () => {
+test('GitHub token validation accepts classic and fine-grained tokens without exposing or persisting them', () => {
   assert.equal(normalizeGithubToken(`  ${TOKEN}  `), TOKEN);
+  const classicToken = `ghp_${'c'.repeat(36)}`;
+  assert.equal(normalizeGithubToken(classicToken), classicToken);
   for (const invalid of ['', 'too-short', 'github_pat_has spaces and a secret', `x${'x'.repeat(512)}`, null]) {
     assert.throws(() => normalizeGithubToken(invalid), /GitHub personal access token|GitHub tokens/);
   }

@@ -37,6 +37,7 @@ export async function resolveWorkspaceRoot(input) {
 }
 
 function insideRoot(root, target) {
+  if (typeof root !== 'string' || !root) return false;
   const relative = path.relative(root, target);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
@@ -108,8 +109,12 @@ async function resolveComputerPath(root, filePath, { allowMissing = false } = {}
   if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('A file path is required.');
   if (filePath.length > 1_000) throw new Error('That path is too long.');
   if (filePath.includes('\0')) throw new Error('File paths cannot contain null characters.');
-  const target = path.resolve(root, filePath);
-  if (!path.isAbsolute(filePath) && !insideRoot(root, target)) {
+  const isAbsolute = path.isAbsolute(filePath);
+  if (!root && !isAbsolute) {
+    throw new Error('Full-computer mode has no selected workspace; use an explicit absolute path.');
+  }
+  const target = isAbsolute ? path.resolve(filePath) : path.resolve(root, filePath);
+  if (!isAbsolute && !insideRoot(root, target)) {
     throw new Error('Use an absolute path to access a location outside the selected workspace.');
   }
   try {
@@ -312,10 +317,27 @@ export async function previewWorkspaceWrite(root, relativePath, content, options
   };
 }
 
-export async function runWorkspaceCommand(root, command) {
+export async function runWorkspaceCommand(root, command, explicitCwd = null) {
   if (typeof command !== 'string' || !command.trim()) throw new Error('A non-empty command is required.');
   if (command.length > 2_000) throw new Error('Commands are limited to 2,000 characters.');
   if (command.includes('\0')) throw new Error('Commands cannot contain null characters.');
+
+  let cwd;
+  let reportedCwd = '.';
+  if (root) {
+    if (explicitCwd !== null && explicitCwd !== undefined) {
+      throw new Error('A working directory cannot be overridden while a workspace is selected.');
+    }
+    cwd = await fs.realpath(root);
+  } else {
+    if (typeof explicitCwd !== 'string' || !path.isAbsolute(explicitCwd)) {
+      throw new Error('Full-computer mode has no selected workspace; provide an explicit absolute cwd for shell commands.');
+    }
+    cwd = await fs.realpath(explicitCwd);
+    reportedCwd = cwd;
+  }
+  const cwdInfo = await fs.stat(cwd);
+  if (!cwdInfo.isDirectory()) throw new Error('The command working directory must be a folder.');
 
   // Keep unrelated application secrets out of child-process environments. This is not a sandbox:
   // an approved shell command still runs as the current OS user and can access that user's files.
@@ -326,17 +348,17 @@ export async function runWorkspaceCommand(root, command) {
 
   try {
     const { stdout, stderr } = await execAsync(command, {
-      cwd: root,
+      cwd,
       env: safeEnvironment,
       timeout: 30_000,
       maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
       windowsHide: true,
     });
-    return { command, cwd: '.', exitCode: 0, stdout, stderr };
+    return { command, cwd: reportedCwd, exitCode: 0, stdout, stderr };
   } catch (error) {
     return {
       command,
-      cwd: '.',
+      cwd: reportedCwd,
       exitCode: Number.isInteger(error.code) ? error.code : null,
       stdout: String(error.stdout ?? '').slice(0, MAX_COMMAND_OUTPUT_BYTES / 2),
       stderr: String(error.stderr ?? '').slice(0, MAX_COMMAND_OUTPUT_BYTES / 2),
@@ -367,7 +389,7 @@ export async function executeMutationTool(root, name, args, options = {}) {
         fullComputerAccess: options.fullComputerAccess === true,
       });
     case 'run_command':
-      return runWorkspaceCommand(root, args.command);
+      return runWorkspaceCommand(root, args.command, options.cwd ?? args.cwd ?? null);
     default:
       throw new Error(`Unknown change tool: ${name}`);
   }

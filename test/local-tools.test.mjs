@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
   executeGitCommit,
+  executeGitPush,
   executeLocalReadTool,
   getGitRepositoryConfig,
   initializeGitRepository,
@@ -17,6 +18,7 @@ import {
   unstageGitFiles,
   parseWindowsTasklist,
   prepareGitCommitPreview,
+  prepareGitPushPreview,
 } from '../src/local-tools.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -163,6 +165,45 @@ test('repository configuration stays local, redacts existing remote credentials,
   const nested = path.join(root, 'nested');
   await fs.mkdir(nested);
   await assert.rejects(saveGitRepositoryConfig(nested, { userName: 'Outside' }), /root is the selected workspace/i);
+});
+
+test('GitHub push preview is local-only, names its exact branch and rejects non-GitHub remotes', async (t) => {
+  const root = await makeGitRepository(t);
+  await git(root, ['remote', 'add', 'origin', 'https://github.com/acme/project.git']);
+
+  const preview = await prepareGitPushPreview(root);
+  assert.equal(preview.remoteName, 'origin');
+  assert.equal(preview.remoteFullName, 'acme/project');
+  assert.equal(preview.remoteUrl, 'https://github.com/acme/project.git');
+  assert.equal(preview.upstreamKnown, false);
+  assert.equal(preview.commitsAhead, 1);
+  assert.equal(preview.commits.length, 1);
+  assert.equal(preview.commits[0].subject, 'initial commit');
+  assert.match(preview.fingerprint, /^[a-f0-9]{64}$/);
+  assert.doesNotMatch(JSON.stringify(preview), /token|credential|secret/i);
+
+  await git(root, ['remote', 'set-url', 'origin', 'https://example.com/acme/project.git']);
+  await assert.rejects(prepareGitPushPreview(root), /github\.com/i);
+  await git(root, ['remote', 'set-url', 'origin', 'https://github.com/acme/project.git']);
+  await git(root, ['remote', 'set-url', '--add', '--push', 'origin', 'https://github.com/acme/project.git']);
+  await git(root, ['remote', 'set-url', '--add', '--push', 'origin', 'https://github.com/acme/other.git']);
+  await assert.rejects(prepareGitPushPreview(root), /exactly one configured push URL/i);
+});
+
+test('GitHub push rejects a branch that changed after native outgoing-commit review without opening authentication', async (t) => {
+  const root = await makeGitRepository(t);
+  await git(root, ['remote', 'add', 'origin', 'https://github.com/acme/project.git']);
+  const reviewed = await prepareGitPushPreview(root);
+
+  await fs.writeFile(path.join(root, 'README.md'), 'changed after push review\n');
+  await git(root, ['add', 'README.md']);
+  await git(root, ['commit', '--quiet', '-m', 'unreviewed follow-up']);
+
+  await assert.rejects(
+    executeGitPush(root, `github_pat_${'x'.repeat(45)}`, 'arena-user', reviewed.fingerprint),
+    /changed after push review.*Nothing was pushed/i,
+  );
+  assert.equal((await git(root, ['log', '-1', '--format=%s'])).stdout.trim(), 'unreviewed follow-up');
 });
 
 test('repository-specific ARENA.md is bounded text and never follows a symbolic link', async (t) => {

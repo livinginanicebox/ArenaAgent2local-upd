@@ -104,6 +104,12 @@ test('full-computer access permits absolute paths outside the workspace when exp
   const read = await readForAgent(root, privateFile, { fullComputerAccess: true });
   assert.equal(read.path, privateFile);
   assert.equal(read.content, 'TEST_TOKEN=fixture-only\n');
+  await assert.rejects(readForAgent(null, 'notes.txt', { fullComputerAccess: true }), /no selected workspace.*absolute path/i);
+  const noWorkspaceRead = await readForAgent(null, privateFile, { fullComputerAccess: true });
+  assert.equal(noWorkspaceRead.path, privateFile);
+  assert.equal(noWorkspaceRead.content, 'TEST_TOKEN=fixture-only\n');
+  const noWorkspaceList = await listWorkspace(null, privateDirectory, { fullComputerAccess: true });
+  assert.equal(noWorkspaceList.path, privateDirectory);
 
   const preview = await previewWorkspaceWrite(root, newFile, 'approved outside write\n', { fullComputerAccess: true });
   assert.equal(preview.outsideWorkspace, true);
@@ -111,4 +117,10 @@ test('full-computer access permits absolute paths outside the workspace when exp
   const written = await writeWorkspaceFile(root, newFile, 'approved outside write\n', null, { fullComputerAccess: true });
   assert.equal(written.path, newFile);
   assert.equal(await fs.readFile(newFile, 'utf8'), 'approved outside write\n');
+  const noWorkspaceNewFile = path.join(privateDirectory, 'no-workspace.txt');
+  const noWorkspacePreview = await previewWorkspaceWrite(null, noWorkspaceNewFile, 'explicit path write\n', { fullComputerAccess: true });
+  assert.equal(noWorkspacePreview.path, noWorkspaceNewFile);
+  const noWorkspaceWritten = await writeWorkspaceFile(null, noWorkspaceNewFile, 'explicit path write\n', null, { fullComputerAccess: true });
+  assert.equal(noWorkspaceWritten.path, noWorkspaceNewFile);
+  assert.equal(await fs.readFile(noWorkspaceNewFile, 'utf8'), 'explicit path write\n');
 });

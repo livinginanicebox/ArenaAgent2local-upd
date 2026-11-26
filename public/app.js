@@ -15,6 +15,10 @@ let combinedUnlockPairingHint = '';
 let combinedUnlockTimer = null;
 let combinedUnlockSliderUnlocked = false;
 let combinedUnlockStarting = false;
+let controlPauseBusy = false;
+let gitToggleBusy = false;
+let robloxToggleBusy = false;
+let gitPushBusy = false;
 let gitDashboard = null;
 let githubRepositories = [];
 let selectedGitPaths = new Set();
@@ -34,6 +38,9 @@ const els = {
   bridgeStepMark: $('#bridgeStepMark'),
   ngrokSetup: $('#ngrokSetup'),
   liveConnection: $('#liveConnection'),
+  connectionLiveTag: $('#connectionLiveTag'),
+  pauseControlBtn: $('#pauseControlBtn'),
+  controlPauseNotice: $('#controlPauseNotice'),
   ngrokTokenInput: $('#ngrokTokenInput'),
   saveNgrokTokenBtn: $('#saveNgrokTokenBtn'),
   ngrokTokenStatus: $('#ngrokTokenStatus'),
@@ -49,6 +56,7 @@ const els = {
   fullComputerAccessBtn: $('#fullComputerAccessBtn'),
   fullComputerAccessCopy: $('#fullComputerAccessCopy'),
   fullComputerAccessBanner: $('#fullComputerAccessBanner'),
+  fullComputerAccessBannerTitle: $('#fullComputerAccessBannerTitle'),
   credentialRule: $('#credentialRule'),
   appVersion: $('#appVersion'),
   tunnelUrl: $('#tunnelUrl'),
@@ -57,6 +65,7 @@ const els = {
   sidebarSecurityCopy: $('#sidebarSecurityCopy'),
   bridgeDisclaimerCopy: $('#bridgeDisclaimerCopy'),
   permissionDescription: $('#permissionDescription'),
+  readRule: $('#readRule'),
   changeRule: $('#changeRule'),
   dangerModeBanner: $('#dangerModeBanner'),
   dangerModeTitle: $('#dangerModeTitle'),
@@ -79,6 +88,9 @@ const els = {
   robloxMcpToolsList: $('#robloxMcpToolsList'),
   connectRobloxMcpBtn: $('#connectRobloxMcpBtn'),
   disconnectRobloxMcpBtn: $('#disconnectRobloxMcpBtn'),
+  robloxMcpToggleBtn: $('#robloxMcpToggleBtn'),
+  gitIntegrationToggleBtn: $('#gitIntegrationToggleBtn'),
+  gitPushBtn: $('#gitPushBtn'),
   refreshGitBtn: $('#refreshGitBtn'),
   gitStatusBadge: $('#gitStatusBadge'),
   gitBranchName: $('#gitBranchName'),
@@ -152,49 +164,59 @@ function makeElement(tag, className, text) {
 }
 
 function displayName(value) {
-  if (!value || value === '.') return appState?.workspaceName || 'Workspace';
+  if (!value || value === '.') {
+    const localRoot = appState?.localWorkspaceRoot || appState?.workspaceRoot || '';
+    return appState?.localWorkspaceName || String(localRoot).split(/[\\/]/).filter(Boolean).at(-1) || appState?.workspaceName || 'Workspace';
+  }
   return String(value).split(/[\\/]/).filter(Boolean).at(-1) || value;
 }
 
 function applyState(state) {
   if (!state) return;
+  const firstRender = !appState;
   const wasLive = Boolean(appState?.tunnelActive);
-  const previousWorkspace = appState?.workspaceRoot;
+  const previousWorkspace = appState?.localWorkspaceRoot ?? appState?.workspaceRoot ?? null;
+  const localWorkspaceRoot = state.localWorkspaceRoot ?? state.workspaceRoot ?? null;
+  const localWorkspaceChanged = previousWorkspace !== localWorkspaceRoot;
   appState = state;
   if (combinedUnlockChallengeId && (
     !state.fullComputerAccess
     || state.permissionMode !== combinedUnlockPermissionMode
-    || state.workspaceRoot !== combinedUnlockWorkspaceRoot
+    || localWorkspaceRoot !== combinedUnlockWorkspaceRoot
     || state.pairingTokenHint !== combinedUnlockPairingHint
     || state.tunnelActive || state.tunnelStarting || state.tunnelStopping
     || (state.tasks || []).some((task) => ['running', 'preparing', 'awaiting_approval'].includes(task.status))
   )) {
     void cancelCombinedUnlock();
   }
-  if (previousWorkspace && previousWorkspace !== state.workspaceRoot) {
+  if (localWorkspaceChanged) {
     browserPath = '.';
     currentFileEntries = [];
     currentFileTruncated = false;
     if (els.fileFilter) els.fileFilter.value = '';
   }
-  const name = state.workspaceName || displayName(state.workspaceRoot);
-  const root = state.workspaceRoot || '—';
+  const name = localWorkspaceRoot
+    ? (state.localWorkspaceName || displayName(localWorkspaceRoot))
+    : (state.fullComputerAccess ? 'No local workspace selected' : (state.workspaceName || 'Workspace'));
+  const root = localWorkspaceRoot || (state.fullComputerAccess ? 'No local preview/Git workspace' : '—');
   els.workspaceName.textContent = name;
   els.workspacePath.textContent = root;
   els.workspacePath.title = root;
-  els.sidebarWorkspaceName.textContent = name;
-  els.sidebarWorkspacePath.textContent = root;
+  els.sidebarWorkspaceName.textContent = state.fullComputerAccess && localWorkspaceRoot ? `${name} · LOCAL ONLY` : name;
+  els.sidebarWorkspacePath.textContent = state.fullComputerAccess ? 'Remote file scope: no workspace' : root;
   if (els.appVersion && state.appVersion) els.appVersion.textContent = `v${state.appVersion}`;
   els.permissionMode.value = state.permissionMode || 'ask';
   updatePermissionCopy();
   updateConnectionPanel();
   updateRobloxMcpPanel();
+  updateGitIntegrationPanel();
   updateGithubAccountPanel();
   updateGitSelectionControls();
   renderApprovals();
   renderActivity();
-  if (!previousWorkspace || previousWorkspace !== state.workspaceRoot) {
+  if (localWorkspaceChanged || firstRender) {
     selectedGitPaths.clear();
+    void loadFiles('.');
     void loadGitDashboard();
   }
 
@@ -215,16 +237,27 @@ function applyState(state) {
 
 function updateConnectionPanel() {
   const live = Boolean(appState?.tunnelActive && appState?.tunnelUrl);
+  const controlPaused = live && Boolean(appState?.controlPaused);
   const starting = Boolean(appState?.tunnelStarting);
   const stopping = Boolean(appState?.tunnelStopping);
   const busy = starting || stopping;
   const configured = Boolean(appState?.ngrokTokenConfigured);
-  els.connectionPill.classList.toggle('live', live);
+  els.connectionPill.classList.toggle('live', live && !controlPaused);
+  els.connectionPill.classList.toggle('paused', controlPaused);
   els.connectionPill.classList.toggle('connecting', busy && !live);
   els.connectionPill.classList.toggle('disconnected', !live && !busy);
-  els.connectionLabel.textContent = live ? 'REMOTE LINK ACTIVE' : starting ? 'CONNECTING…' : stopping ? 'STOPPING…' : 'REMOTE LINK OFF';
-  els.navConnectionDot.classList.toggle('live', live);
+  els.connectionLabel.textContent = live ? controlPaused ? 'CONTROL PAUSED · LINK LIVE' : 'REMOTE LINK ACTIVE' : starting ? 'CONNECTING…' : stopping ? 'STOPPING…' : 'REMOTE LINK OFF';
+  els.navConnectionDot.classList.toggle('live', live && !controlPaused);
+  els.navConnectionDot.classList.toggle('paused', controlPaused);
   els.navConnectionDot.classList.toggle('connecting', busy && !live);
+  els.liveConnection.classList.toggle('control-paused', controlPaused);
+  els.connectionLiveTag.textContent = controlPaused ? 'PAUSED' : 'LIVE';
+  els.connectionLiveTag.classList.toggle('paused', controlPaused);
+  els.pauseControlBtn.textContent = controlPaused ? 'Resume control' : 'Pause control';
+  els.pauseControlBtn.setAttribute('aria-pressed', String(controlPaused));
+  els.pauseControlBtn.setAttribute('aria-label', controlPaused ? 'Resume remote control without changing the link or pairing key' : 'Pause remote control without changing the link or pairing key');
+  els.pauseControlBtn.disabled = !live || busy || controlPauseBusy;
+  els.pauseControlNotice.hidden = !controlPaused;
   els.bridgeStepMark.textContent = live ? '02 / CONNECTED' : starting ? '02 / CONNECTING' : stopping ? '02 / STOPPING' : configured ? '02 / READY' : '01 / SET UP';
   els.ngrokSetup.hidden = live;
   els.liveConnection.hidden = !live;
@@ -269,14 +302,16 @@ function updateConnectionPanel() {
 
 function updateRobloxMcpPanel() {
   const mcp = appState?.robloxMcp || {};
-  const status = mcp.status || 'disconnected';
-  const connected = status === 'connected';
+  const enabled = appState?.robloxMcpEnabled !== false && mcp.enabled !== false;
+  const status = enabled ? (mcp.status || 'disconnected') : 'disabled';
+  const connected = enabled && status === 'connected';
   const busy = status === 'connecting' || status === 'disconnecting';
   const tools = Array.isArray(mcp.tools) ? mcp.tools : [];
   const labels = {
     connected: `Connected · ${mcp.toolCount ?? tools.length} tools available`,
     connecting: 'Starting the local Studio MCP process…',
     disconnecting: 'Disconnecting from Studio…',
+    disabled: 'Disabled locally · Studio is disconnected and unavailable to Arena',
     error: 'Roblox Studio MCP connection failed',
     unsupported: 'Roblox Studio MCP is not supported on this operating system',
     disconnected: mcp.installed === false ? 'Roblox Studio MCP launcher not found' : 'Not connected',
@@ -286,23 +321,30 @@ function updateRobloxMcpPanel() {
   els.robloxMcpBadge.textContent = status === 'connected' ? 'CONNECTED'
     : status === 'connecting' ? 'CONNECTING…'
       : status === 'disconnecting' ? 'STOPPING…'
-        : status === 'error' ? 'ERROR'
-          : status === 'unsupported' ? 'UNSUPPORTED'
-            : mcp.installed === false ? 'NOT FOUND' : 'OFFLINE';
-  const message = mcp.error || (mcp.supported && mcp.installed === false
+        : status === 'disabled' ? 'DISABLED'
+          : status === 'error' ? 'ERROR'
+            : status === 'unsupported' ? 'UNSUPPORTED'
+              : mcp.installed === false ? 'NOT FOUND' : 'OFFLINE';
+  const message = enabled ? (mcp.error || (mcp.supported && mcp.installed === false
     ? 'Install or update Roblox Studio, then enable Assistant → Manage MCP Servers → Enable Studio as MCP server.'
-    : '');
+    : '')) : '';
   els.robloxMcpError.textContent = message;
   els.robloxMcpError.hidden = !message;
-  els.connectRobloxMcpBtn.hidden = connected;
-  els.connectRobloxMcpBtn.disabled = busy || !mcp.supported || mcp.installed === false;
+  els.connectRobloxMcpBtn.hidden = connected || !enabled;
+  els.connectRobloxMcpBtn.disabled = busy || !enabled || !mcp.supported || mcp.installed === false;
   els.connectRobloxMcpBtn.textContent = status === 'connecting' ? 'Connecting…' : 'Connect Roblox Studio';
   els.disconnectRobloxMcpBtn.hidden = !connected;
   els.disconnectRobloxMcpBtn.disabled = busy;
+  els.robloxMcpToggleBtn.textContent = enabled ? 'Disable Studio MCP' : 'Enable Studio MCP';
+  els.robloxMcpToggleBtn.setAttribute('aria-pressed', String(enabled));
+  els.robloxMcpToggleBtn.disabled = busy || robloxToggleBusy;
+  els.robloxMcpToggleBtn.title = enabled
+    ? 'Disable local Studio controls and remote MCP access, then disconnect Studio.'
+    : 'Enable local Studio controls; connect to Studio separately when ready.';
   els.robloxMcpToolsSummary.textContent = `Available tools · ${connected ? (mcp.toolCount ?? tools.length) : 0}`;
   els.robloxMcpToolsList.replaceChildren();
   if (!connected || !tools.length) {
-    els.robloxMcpToolsList.append(makeElement('li', '', connected ? 'Studio has not reported any tools.' : 'Connect to Studio to discover its tools.'));
+    els.robloxMcpToolsList.append(makeElement('li', '', !enabled ? 'Studio MCP is disabled locally.' : connected ? 'Studio has not reported any tools.' : 'Connect to Studio to discover its tools.'));
     return;
   }
   for (const tool of tools) {
@@ -315,7 +357,36 @@ function updateRobloxMcpPanel() {
   }
 }
 
+function updateGitIntegrationPanel() {
+  const enabled = appState?.gitIntegrationEnabled !== false;
+  els.gitIntegrationToggleBtn.textContent = enabled ? 'Disable Git' : 'Enable Git';
+  els.gitIntegrationToggleBtn.setAttribute('aria-pressed', String(enabled));
+  els.gitIntegrationToggleBtn.disabled = gitToggleBusy;
+  els.gitIntegrationToggleBtn.title = enabled
+    ? 'Disable local Git/GitHub controls and remote Git actions.'
+    : 'Enable local Git/GitHub controls and remote Git actions.';
+  if (!enabled) {
+    gitLoadSequence += 1;
+    gitDashboard = null;
+    githubRepositories = [];
+    selectedGitPaths.clear();
+    if (els.githubRepositorySelect) els.githubRepositorySelect.replaceChildren(new Option('Git integration disabled', ''));
+    if (els.githubRepositoryStatus) els.githubRepositoryStatus.textContent = 'Enable Git integration to use GitHub repository controls.';
+    els.gitStatusBadge.textContent = 'DISABLED';
+    els.gitStatusBadge.dataset.state = 'disabled';
+    els.gitBranchName.textContent = 'Git integration disabled';
+    els.gitSummaryText.textContent = 'Local Git controls and remote Git actions are blocked.';
+    els.gitCounts.hidden = true;
+    els.gitRepositoryContent.hidden = true;
+    els.gitUnavailableText.textContent = 'Git integration is disabled locally. Enable it above to restore the local workbench and remote Git tools.';
+    els.initializeGitBtn.hidden = true;
+    els.gitUnavailable.hidden = false;
+    els.refreshGitBtn.disabled = true;
+  }
+}
+
 function updateGithubAccountPanel() {
+  const integrationEnabled = appState?.gitIntegrationEnabled !== false;
   const configured = Boolean(appState?.githubTokenConfigured);
   const usable = Boolean(appState?.githubTokenUsable);
   if (els.githubTokenStatus) {
@@ -331,11 +402,19 @@ function updateGithubAccountPanel() {
     els.githubTokenStatus.textContent = message;
     els.githubTokenStatus.dataset.state = state;
   }
-  if (els.forgetGithubTokenBtn) els.forgetGithubTokenBtn.hidden = !configured;
-  if (els.loadGithubReposBtn) els.loadGithubReposBtn.disabled = !usable;
-  if (els.githubRepositorySelect) els.githubRepositorySelect.disabled = !githubRepositories.length;
-  if (els.setGithubOriginBtn) els.setGithubOriginBtn.disabled = !usable || !els.githubRepositorySelect?.value;
-  if (els.githubTokenInput) els.githubTokenInput.placeholder = configured ? 'Enter a new token to replace the saved one' : 'Paste GitHub personal access token';
+  if (els.forgetGithubTokenBtn) {
+    els.forgetGithubTokenBtn.hidden = !configured;
+    els.forgetGithubTokenBtn.disabled = !integrationEnabled;
+  }
+  if (els.loadGithubReposBtn) els.loadGithubReposBtn.disabled = !integrationEnabled || !usable;
+  if (els.githubRepositorySelect) els.githubRepositorySelect.disabled = !integrationEnabled || !githubRepositories.length;
+  if (els.setGithubOriginBtn) els.setGithubOriginBtn.disabled = !integrationEnabled || !usable || !els.githubRepositorySelect?.value;
+  if (els.githubTokenInput) {
+    els.githubTokenInput.disabled = !integrationEnabled;
+    els.githubTokenInput.placeholder = configured ? 'Enter a new token to replace the saved one' : 'Paste GitHub personal access token';
+  }
+  if (els.saveGithubTokenBtn) els.saveGithubTokenBtn.disabled = !integrationEnabled;
+  if (els.gitPushBtn) els.gitPushBtn.disabled = !integrationEnabled || !usable || !gitDashboard?.available || activeRemoteTaskExists() || gitPushBusy;
 }
 
 function isGitChangeStaged(change) {
@@ -359,19 +438,26 @@ function updateGitSelectionControls() {
   const selected = selectedGitChanges();
   const stageable = selected.filter(isGitChangeUnstaged);
   const unstageable = selected.filter(isGitChangeStaged);
+  const enabled = appState?.gitIntegrationEnabled !== false;
+  const hasLocalWorkspace = Boolean(appState?.localWorkspaceRoot ?? appState?.workspaceRoot);
+  const blocked = !enabled || !hasLocalWorkspace;
   const busy = activeRemoteTaskExists();
-  els.gitStageSelectedBtn.disabled = !stageable.length || busy;
-  els.gitUnstageSelectedBtn.disabled = !unstageable.length || busy;
+  els.gitStageSelectedBtn.disabled = blocked || !stageable.length || busy;
+  els.gitUnstageSelectedBtn.disabled = blocked || !unstageable.length || busy;
   els.gitSelectionHint.textContent = selected.length
     ? `${selected.length} selected · ${stageable.length} can stage · ${unstageable.length} can unstage`
     : 'Select files to stage or unstage.';
-  els.gitPreviewCommitBtn.disabled = !gitDashboard?.diff?.fileCount || busy;
-  els.saveGitIdentityBtn.disabled = busy;
-  els.saveGitRemoteBtn.disabled = busy;
-  els.initializeGitBtn.disabled = busy;
-  const instructionsBlocked = Boolean(gitDashboard?.config?.instructionsIssue);
+  els.gitPreviewCommitBtn.disabled = blocked || !gitDashboard?.diff?.fileCount || busy;
+  els.saveGitIdentityBtn.disabled = blocked || busy;
+  els.saveGitRemoteBtn.disabled = blocked || busy;
+  els.initializeGitBtn.disabled = blocked || busy;
+  els.refreshGitBtn.disabled = blocked || els.gitStatusBadge.dataset.state === 'loading';
+  els.gitCommitMessage.disabled = blocked || busy;
+  const instructionsBlocked = blocked || Boolean(gitDashboard?.config?.instructionsIssue);
   els.repositoryInstructionsInput.disabled = instructionsBlocked;
   els.saveRepositoryInstructionsBtn.disabled = busy || instructionsBlocked || (new TextEncoder().encode(els.repositoryInstructionsInput.value).length > 24 * 1024);
+  if (els.copyGitDiffBtn) els.copyGitDiffBtn.disabled = blocked || !gitDashboard?.diff?.diff;
+  if (els.gitPushBtn) els.gitPushBtn.disabled = blocked || !appState?.githubTokenUsable || !gitDashboard?.available || busy || gitPushBusy;
 }
 
 function renderGitChanges() {
@@ -425,14 +511,17 @@ function renderGitConfiguration(config) {
 function renderGitDashboard(data) {
   if (!data.available) {
     gitDashboard = null;
-    els.gitStatusBadge.textContent = 'NO REPO';
-    els.gitStatusBadge.dataset.state = 'error';
-    els.gitBranchName.textContent = 'No Git repository at this workspace root';
-    els.gitSummaryText.textContent = 'Git commands stay scoped to the selected workspace root.';
+    const noWorkspace = data.noWorkspace === true;
+    els.gitStatusBadge.textContent = noWorkspace ? 'NO WORKSPACE' : 'NO REPO';
+    els.gitStatusBadge.dataset.state = noWorkspace ? 'loading' : 'error';
+    els.gitBranchName.textContent = noWorkspace ? 'No local Git workspace selected' : 'No Git repository at this workspace root';
+    els.gitSummaryText.textContent = noWorkspace
+      ? 'Full-computer remote mode has no workspace; choose one separately for local Git and desktop preview.'
+      : 'Git commands stay scoped to the separately selected local repository root.';
     els.gitCounts.hidden = true;
     els.gitRepositoryContent.hidden = true;
     els.gitUnavailableText.textContent = data.message || 'Choose the root folder of a Git repository to use repository tools.';
-    els.initializeGitBtn.hidden = false;
+    els.initializeGitBtn.hidden = noWorkspace || data.disabled === true;
     els.gitUnavailable.hidden = false;
     updateGitSelectionControls();
     return;
@@ -474,6 +563,11 @@ function renderGitDashboard(data) {
 }
 
 async function loadGitDashboard() {
+  if (appState?.gitIntegrationEnabled === false) {
+    updateGitIntegrationPanel();
+    updateGitSelectionControls();
+    return;
+  }
   const sequence = ++gitLoadSequence;
   gitDashboard = null;
   els.gitRepositoryContent.hidden = true;
@@ -662,6 +756,7 @@ async function loadGithubRepositories() {
   els.githubRepositoryStatus.textContent = 'Loading up to 100 repositories from GitHub…';
   try {
     const result = await window.arenaLocal.listGithubRepositories();
+    if (appState?.gitIntegrationEnabled === false) return;
     githubRepositories = Array.isArray(result.repositories) ? result.repositories : [];
     els.githubRepositorySelect.replaceChildren();
     const placeholder = document.createElement('option');
@@ -768,9 +863,36 @@ function closeGitCommitPreview() {
   if (els.gitCommitPreviewDialog.open) els.gitCommitPreviewDialog.close();
 }
 
+async function pushGitBranch() {
+  if (!appState?.githubTokenUsable) {
+    showToast('Save and verify a GitHub PAT before pushing.', true);
+    return;
+  }
+  gitPushBusy = true;
+  updateGitSelectionControls();
+  updateGithubAccountPanel();
+  try {
+    const result = await window.arenaLocal.pushGitBranch();
+    if (!result?.pushed) {
+      showToast('Push cancelled. No remote changes were made.');
+      return;
+    }
+    showToast(`Pushed ${result.commitCount} commit${result.commitCount === 1 ? '' : 's'} to ${result.remoteFullName} (${result.branch}).`);
+    await loadGitDashboard();
+  } catch (error) {
+    showToast(error.message || 'Could not push this branch to GitHub.', true);
+  } finally {
+    gitPushBusy = false;
+    updateGitSelectionControls();
+    updateGithubAccountPanel();
+  }
+}
+
 function updateScopePanel() {
   const fullComputerAccess = Boolean(appState?.fullComputerAccess);
+  const localWorkspaceSelected = Boolean(appState?.localWorkspaceRoot ?? appState?.workspaceRoot);
   const live = Boolean(appState?.tunnelActive || appState?.tunnelStarting || appState?.tunnelStopping);
+  const controlPaused = Boolean(appState?.controlPaused);
   const noAsk = els.permissionMode.value === 'no-ask';
   const noAskOption = els.permissionMode.querySelector('option[value="no-ask"]');
   noAskOption.disabled = false;
@@ -779,9 +901,24 @@ function updateScopePanel() {
     : 'No approval — VERY DANGEROUS';
   els.workspaceScopeIcon.textContent = fullComputerAccess ? '!' : '✓';
   els.workspaceScopeIcon.classList.toggle('full-access-scope-icon', fullComputerAccess);
-  els.workspaceScopeCopy.textContent = fullComputerAccess
-    ? 'Full computer access is active; file tools are no longer workspace-confined.'
-    : 'Remote file actions stay inside this folder.';
+  els.workspaceScopeCopy.textContent = controlPaused
+    ? fullComputerAccess
+      ? 'Remote control is paused; the no-workspace full-computer scope is retained.'
+      : 'Workspace scope is retained, but remote file access is currently paused.'
+    : fullComputerAccess
+      ? 'No remote workspace is selected. Remote file paths must be absolute; local Git/preview needs a separate folder selection.'
+      : 'Remote file actions stay inside this folder.';
+  const workspaceButtonText = fullComputerAccess
+    ? `${localWorkspaceSelected ? 'Change' : 'Choose'} local preview / Git folder`
+    : `${localWorkspaceSelected ? 'Change' : 'Choose'} workspace folder`;
+  const workspaceBusy = live || activeRemoteTaskExists();
+  if (els.chooseWorkspaceBtn.firstChild) els.chooseWorkspaceBtn.firstChild.textContent = `${workspaceButtonText} `;
+  els.chooseWorkspaceBtn.disabled = workspaceBusy;
+  els.chooseWorkspaceBtn.title = workspaceBusy
+    ? 'Stop the remote connection and wait for active requests before changing the local workspace.'
+    : fullComputerAccess
+      ? 'Choose a separate local workspace for desktop preview and Git. It will not become the remote file workspace.'
+      : 'Choose the folder Arena may access remotely.';
   els.fullComputerAccessBtn.textContent = fullComputerAccess ? 'Disable full-computer access' : 'Enable EXTREMELY DANGEROUS access';
   els.fullComputerAccessBtn.classList.toggle('active', fullComputerAccess);
   els.fullComputerAccessBtn.disabled = live || (!fullComputerAccess && noAsk);
@@ -794,20 +931,33 @@ function updateScopePanel() {
         ? 'Disable this temporary mode and rotate the pairing key.'
         : 'EXTREMELY DANGEROUS: requires two local warnings and removes the workspace boundary.';
   els.fullComputerAccessCopy.textContent = fullComputerAccess
-    ? noAsk
-      ? 'EXTREMELY DANGEROUS: Arena can read private files and credentials; writes, Git commits, shell commands, and mutating Roblox Studio tools run without local approval. Stop the link to disable both modes and rotate the key.'
-      : 'EXTREMELY DANGEROUS: private files and credentials may be readable and sent to Arena. Ask mode requires local approval for writes, Git commits, and mutating Studio tools. Git actions remain scoped to the selected repository root. No-Ask is available only through the local 30-second slide-to-unlock safety flow.'
+    ? controlPaused
+      ? 'Remote control is paused. No remote workspace is selected; explicit absolute paths remain required after resuming. A separate local folder is needed for desktop preview and Git.'
+      : noAsk
+        ? 'EXTREMELY DANGEROUS: every remote file action needs an explicit absolute path; reads may expose private files and credentials. Writes and shell commands run without approval. Git and desktop preview require a separately selected local folder. Stop the link to disable both modes and rotate the key.'
+        : 'EXTREMELY DANGEROUS: remote file actions require explicit absolute paths and may expose private files or credentials. Ask mode requires local approval for writes, Git commits, and mutating Studio tools. Git and desktop preview need a separate local folder selection. No-Ask requires the 30-second local slide-to-unlock flow.'
     : noAsk
       ? 'EXTREMELY DANGEROUS. Switch to Ask or Read only before enabling full-computer access.'
-      : 'EXTREMELY DANGEROUS. Two native warnings required. Must be enabled while disconnected; resets when the link stops. Combining with No-Ask requires a separate 30-second local slide-to-unlock and final warning.';
-  els.fullComputerAccessBannerCopy.textContent = noAsk
-    ? 'Full-computer access is combined with No-Ask: file reads can expose private files and credentials to Arena.ai; writes, Git commits, shell commands, and mutating Roblox Studio tools run immediately without per-action approval. Stop the link to disable this mode and rotate the pairing key.'
-    : 'Arena can list, read, search, and request writes anywhere this OS account can access, including private and credential files. Requested contents can be sent to Arena.ai. Writes, Git commits, and mutating Studio tools follow the selected permission mode; Git stays rooted at the selected repository. Stop the remote link to disable full-computer access and rotate the pairing key.';
+      : 'EXTREMELY DANGEROUS. Two native warnings required. Must be enabled while disconnected; resets when the link stops. Full-computer mode selects no remote workspace; choose a separate local folder for preview/Git. Combining with No-Ask requires a separate 30-second local slide-to-unlock and final warning.';
+  els.fullComputerAccessBannerTitle.textContent = controlPaused
+    ? 'EXTREMELY DANGEROUS · FULL-COMPUTER SCOPE RETAINED · CONTROL PAUSED'
+    : 'EXTREMELY DANGEROUS · FULL-COMPUTER ACCESS ACTIVE';
+  els.fullComputerAccessBannerCopy.textContent = controlPaused
+    ? 'Remote control is paused. Full-computer scope remains configured but no new remote requests are accepted; only health checks work. Actions already running may finish.'
+    : noAsk
+      ? 'Full-computer access is combined with No-Ask: every remote file request needs an explicit absolute path, and reads can expose private files and credentials to Arena.ai. File writes, Git commits, shell commands, and mutating Studio tools run without per-action approval. Git and preview use a separate local workspace; GitHub push still requires local review and native confirmation. Stop the link to disable this mode and rotate the pairing key.'
+      : 'Remote file tools have no selected workspace and require explicit absolute paths; they can reach private and credential files, and requested contents can be sent to Arena.ai. Writes and Studio tools follow the selected permission mode. Git and desktop preview require a separately selected local folder/repository. Stop the remote link to disable full-computer access and rotate the pairing key.';
   els.fullComputerAccessBanner.hidden = !fullComputerAccess;
-  els.credentialRule.textContent = fullComputerAccess ? 'ACCESSIBLE' : 'BLOCK';
-  els.credentialRule.classList.toggle('full-access-rule', fullComputerAccess);
+  els.readRule.textContent = controlPaused ? 'PAUSED' : 'ALLOW';
+  els.readRule.classList.toggle('paused-state', controlPaused);
+  els.credentialRule.textContent = controlPaused ? 'PAUSED' : fullComputerAccess ? 'ACCESSIBLE' : 'BLOCK';
+  els.credentialRule.classList.toggle('full-access-rule', fullComputerAccess && !controlPaused);
+  els.credentialRule.classList.toggle('blocked-state', !controlPaused && !fullComputerAccess);
+  els.credentialRule.classList.toggle('paused-state', controlPaused);
   els.fileFoot.textContent = fullComputerAccess
-    ? 'Remote file tools can use absolute paths anywhere this OS account can access. This desktop preview remains in the selected folder.'
+    ? localWorkspaceSelected
+      ? 'This is a separate local preview folder; remote file requests still require explicit absolute paths and do not inherit this folder.'
+      : 'No local preview folder selected. Choose a local folder above; remote file requests still require explicit absolute paths.'
     : 'Arena can only see files in the selected folder.';
 }
 
@@ -816,44 +966,58 @@ function updatePermissionCopy() {
   const readOnly = mode === 'read-only';
   const noAsk = mode === 'no-ask';
   const fullComputerAccess = Boolean(appState?.fullComputerAccess);
-  els.sidebarSecurityCopy.textContent = fullComputerAccess
+  const controlPaused = Boolean(appState?.controlPaused);
+  els.sidebarSecurityCopy.textContent = controlPaused
+    ? 'Remote control is paused. The link and pairing key remain active, but new remote requests are blocked until you resume locally.'
+    : fullComputerAccess
     ? noAsk
-      ? 'EXTREMELY DANGEROUS: Arena can read files anywhere and run writes, Git commits, commands, and mutating Roblox Studio tools without approval.'
-      : 'EXTREMELY DANGEROUS: Arena can read files anywhere this OS account can access. Writes, Git commits, and Roblox Studio changes still follow your permission mode; Git remains scoped to the selected repository.'
+      ? 'EXTREMELY DANGEROUS: remote file requests require absolute paths and can read anywhere; writes and commands run without approval. Git needs a separately selected repository.'
+      : 'EXTREMELY DANGEROUS: remote file requests require explicit absolute paths and may expose private files. Writes, commits, and Studio changes follow your permission mode; Git needs a separate local repository.'
     : noAsk
       ? 'VERY DANGEROUS: Arena can write files, commit staged Git changes, run shell commands, and change Roblox Studio without approval.'
       : readOnly
         ? 'File reads, Git inspection, process names/PIDs, and known read-only Studio tools are available. Writes, Git commits, commands, and other Studio tools are blocked.'
         : 'Arena can only request scoped actions. File writes, Git commits, shell commands, and changing Roblox Studio tools wait for you here.';
-  els.bridgeDisclaimerCopy.textContent = fullComputerAccess
-    ? noAsk
-      ? 'EXTREMELY DANGEROUS: full-computer reads plus automatic file writes, Git commits, shell commands, and mutating Roblox Studio calls are active. Private data may be sent to Arena.ai; commands run with your normal OS-user permissions.'
-      : 'EXTREMELY DANGEROUS full-computer access is on. Arena can read private and credential files; requested contents are sent to Arena.ai. Writes, Git commits, and mutating Studio tools still follow your permission mode; Git remains rooted at the selected repository.'
-    : noAsk
+  els.bridgeDisclaimerCopy.textContent = controlPaused
+    ? 'Remote control is paused locally. Only health checks work; pending approvals were cancelled. Actions already running may finish. The link and pairing key are unchanged.'
+    : fullComputerAccess
+      ? noAsk
+        ? 'EXTREMELY DANGEROUS: remote file requests require explicit absolute paths; file writes, Git commits, shell commands, and mutating Studio tools run without approval. Private data may be sent to Arena.ai. Git/preview need a separate local folder; GitHub push remains a separate local confirmation.'
+        : 'EXTREMELY DANGEROUS: remote file requests require explicit absolute paths and may read private or credential files; requested contents are sent to Arena.ai. Writes and Studio tools follow your permission mode; Git/preview require a separate local folder.'
+      : noAsk
       ? 'VERY DANGEROUS: writes, Git commits, shell commands, and mutating Roblox Studio tools execute immediately without desktop approval. Stop the link, rotate the key, or switch to Ask or Read only to disable this mode.'
       : readOnly
         ? 'The bearer key lets Arena read files in this workspace. File writes, Git commits, shell commands, and mutating Roblox Studio tools are blocked in Read only mode.'
         : 'The bearer key lets Arena read files in this workspace. Writes, Git commits, commands, and mutating Roblox Studio tools pause for desktop approval unless you enable VERY DANGEROUS no-ask mode.';
-  els.permissionDescription.textContent = fullComputerAccess
+  els.permissionDescription.textContent = controlPaused
+    ? 'Remote control is paused; only health checks are accepted. Your selected permission mode applies again when you resume.'
+    : fullComputerAccess
     ? noAsk
-      ? 'EXTREMELY DANGEROUS: file reads can reach any location; writes, Git commits, commands, and mutating Studio tools run without approval. Git remains scoped to the selected repository.'
+      ? 'EXTREMELY DANGEROUS: remote file requests require explicit absolute paths; writes, Git commits, commands, and mutating Studio tools run without approval. Git and preview require a separate local repository; GitHub push remains local-only and confirmed.'
       : readOnly
-        ? 'EXTREMELY DANGEROUS: file reads can reach any location; writes, Git commits, commands, and mutating Studio tools are blocked.'
-        : 'EXTREMELY DANGEROUS: file reads can reach any location. Writes, Git commits, commands, and mutating Studio tools wait for local approval.'
+        ? 'EXTREMELY DANGEROUS: remote file requests require explicit absolute paths; writes, commits, and mutating Studio tools are blocked.'
+        : 'EXTREMELY DANGEROUS: remote file requests require explicit absolute paths. Writes, commits, commands, and mutating Studio tools wait for local approval.'
     : noAsk
       ? 'VERY DANGEROUS: every remote write, Git commit, shell command, and mutating Studio tool runs immediately without approval.'
       : readOnly
         ? 'Arena can inspect files, Git history/diffs, and process names/PIDs and use known read-only Studio tools; writes, Git commits, commands, and other Studio tools are blocked.'
         : 'Reads and local Git/process inspection are available. Writes, Git commits, commands, and mutating Studio calls pause for your desktop approval.';
-  els.changeRule.textContent = noAsk ? 'AUTO' : readOnly ? 'BLOCK' : 'ASK';
-  els.changeRule.classList.toggle('blocked-state', readOnly);
-  els.changeRule.classList.toggle('no-ask-state', noAsk);
-  els.dangerModeTitle.textContent = fullComputerAccess
-    ? 'EXTREMELY DANGEROUS · FULL COMPUTER + NO-ASK ACTIVE'
-    : 'VERY DANGEROUS · NO-ASK MODE ACTIVE';
-  els.dangerModeCopy.textContent = fullComputerAccess
-    ? 'Full-computer reads and automatic file writes, Git commits, shell commands, and mutating Roblox Studio tools are active. Actions run as your OS user or in open Studio without per-action approval. Stop the link, rotate the key, or close Arena Local to disable this mode.'
-    : 'Arena file writes, Git commits, terminal commands, and mutating Roblox Studio tools execute immediately. Shell commands can reach files outside the selected workspace. Stop the link, rotate the key, choose a different folder, switch to Ask or Read only, or close Arena Local to disable this mode.';
+  els.changeRule.textContent = controlPaused ? 'PAUSED' : noAsk ? 'AUTO' : readOnly ? 'BLOCK' : 'ASK';
+  els.changeRule.classList.toggle('blocked-state', !controlPaused && readOnly);
+  els.changeRule.classList.toggle('no-ask-state', !controlPaused && noAsk);
+  els.changeRule.classList.toggle('paused-state', controlPaused);
+  els.dangerModeTitle.textContent = controlPaused
+    ? fullComputerAccess
+      ? 'EXTREMELY DANGEROUS · FULL COMPUTER + NO-ASK · CONTROL PAUSED'
+      : 'VERY DANGEROUS · NO-ASK · CONTROL PAUSED'
+    : fullComputerAccess
+      ? 'EXTREMELY DANGEROUS · FULL COMPUTER + NO-ASK ACTIVE'
+      : 'VERY DANGEROUS · NO-ASK MODE ACTIVE';
+  els.dangerModeCopy.textContent = controlPaused
+    ? 'Remote control is paused; no new requests are accepted. The configured No-Ask access returns if you resume locally. Pending approvals are cancelled; actions already running may finish.'
+    : fullComputerAccess
+      ? 'Full-computer remote file requests require explicit absolute paths. Automatic writes and shell commands run without approval; Git requires a separate local repository. Stop the link, rotate the key, or close Arena Local to disable this mode.'
+      : 'Arena file writes, Git commits, terminal commands, and mutating Roblox Studio tools execute immediately. Shell commands can reach files outside the selected workspace. Stop the link, rotate the key, choose a different folder, switch to Ask or Read only, or close Arena Local to disable this mode.';
   els.dangerModeBanner.hidden = !noAsk;
   updateScopePanel();
 }
@@ -1074,6 +1238,16 @@ async function runUiAction(action, successMessage) {
 async function loadFiles(relativePath = browserPath) {
   const targetPath = relativePath || '.';
   const requestSequence = ++fileLoadSequence;
+  if (!(appState?.localWorkspaceRoot ?? appState?.workspaceRoot)) {
+    currentFileEntries = [];
+    currentFileTruncated = false;
+    els.fileBreadcrumbs.replaceChildren();
+    els.fileList.replaceChildren(makeElement('div', 'empty-files', 'Select a local workspace to use desktop file preview.'));
+    els.fileFoot.textContent = appState?.fullComputerAccess
+      ? 'Remote file scope has no workspace. Choose a separate local folder for desktop preview and Git.'
+      : 'Choose a local folder to enable file preview.';
+    return;
+  }
   if (targetPath !== browserPath && els.fileFilter) els.fileFilter.value = '';
   browserPath = targetPath;
   currentFileEntries = [];
@@ -1210,6 +1384,51 @@ async function disconnectRobloxMcp() {
   await runUiAction(() => window.arenaLocal.disconnectRobloxMcp(), 'Roblox Studio MCP disconnected.');
 }
 
+async function toggleRobloxMcpIntegration() {
+  const enabled = appState?.robloxMcpEnabled === false || appState?.robloxMcp?.enabled === false;
+  robloxToggleBusy = true;
+  updateRobloxMcpPanel();
+  try {
+    const state = await window.arenaLocal.setRobloxMcpEnabled(enabled);
+    applyState(state);
+    const finalEnabled = state.robloxMcpEnabled !== false && state.robloxMcp?.enabled !== false;
+    showToast(finalEnabled !== enabled
+      ? 'Studio MCP availability was left unchanged.'
+      : enabled
+        ? 'Roblox Studio MCP enabled locally. Connect to Studio when ready.'
+        : 'Roblox Studio MCP disabled locally and disconnected.');
+  } catch (error) {
+    showToast(error.message || 'Could not change Roblox Studio MCP availability.', true);
+  } finally {
+    robloxToggleBusy = false;
+    updateRobloxMcpPanel();
+  }
+}
+
+async function toggleGitIntegration() {
+  const enabled = appState?.gitIntegrationEnabled === false;
+  gitToggleBusy = true;
+  updateGitIntegrationPanel();
+  try {
+    const state = await window.arenaLocal.setGitIntegrationEnabled(enabled);
+    applyState(state);
+    if (state.gitIntegrationEnabled !== enabled) {
+      showToast('Git integration availability was left unchanged.');
+    } else if (state.gitIntegrationEnabled) {
+      await loadGitDashboard();
+      showToast('Local Git and remote Git tools enabled.');
+    } else {
+      showToast('Git disabled locally; local and remote Git controls are blocked.');
+    }
+  } catch (error) {
+    showToast(error.message || 'Could not change Git integration availability.', true);
+  } finally {
+    gitToggleBusy = false;
+    updateGitIntegrationPanel();
+    updateGitSelectionControls();
+  }
+}
+
 async function startTunnel() {
   try {
     const state = await window.arenaLocal.startTunnel();
@@ -1233,6 +1452,29 @@ async function cancelTunnelStart() {
   } finally {
     els.cancelTunnelBtn.disabled = false;
     els.cancelTunnelBtn.textContent = 'Cancel attempt';
+  }
+}
+
+async function toggleControlPause() {
+  if (!appState?.tunnelActive || controlPauseBusy) return;
+  const pause = !Boolean(appState.controlPaused);
+  controlPauseBusy = true;
+  updateConnectionPanel();
+  try {
+    const state = await window.arenaLocal.setControlPaused(pause);
+    applyState(state);
+    if (state.controlPaused === pause) {
+      showToast(pause
+        ? 'Remote control paused. The link and pairing key are unchanged; pending approvals were cancelled.'
+        : 'Remote control resumed with the same link and pairing key.');
+    } else if (!pause) {
+      showToast('Remote control remains paused.');
+    }
+  } catch (error) {
+    showToast(error.message || 'Could not change remote control pause state.', true);
+  } finally {
+    controlPauseBusy = false;
+    updateConnectionPanel();
   }
 }
 
@@ -1462,11 +1704,11 @@ async function toggleFullComputerAccess() {
     const state = await window.arenaLocal.setFullComputerAccess(enable);
     applyState(state);
     if (enable && state.fullComputerAccess) {
-      showToast('EXTREMELY DANGEROUS full-computer access enabled. The pairing key was rotated; start the link and copy a fresh prompt.', true);
+      showToast('EXTREMELY DANGEROUS full-computer mode enabled with no remote workspace. Use absolute file paths; select a separate local folder for preview/Git.', true);
     } else if (enable) {
       showToast('Full-computer access was not enabled. Workspace confinement remains active.');
     } else {
-      showToast('Full-computer access disabled and pairing key rotated.');
+      showToast('Full-computer access disabled, workspace scope restored, and pairing key rotated.');
     }
   } catch (error) {
     showToast(error.message || 'Could not change file-access scope.', true);
@@ -1476,22 +1718,27 @@ async function toggleFullComputerAccess() {
 }
 
 async function chooseWorkspace() {
-  const previousRoot = appState?.workspaceRoot;
+  const previousRoot = appState?.localWorkspaceRoot ?? appState?.workspaceRoot ?? null;
   const hadFullComputerAccess = Boolean(appState?.fullComputerAccess);
   const result = await runUiAction(() => window.arenaLocal.chooseWorkspace());
-  if (result && result.workspaceRoot !== previousRoot) {
-    browserPath = '.';
-    await loadFiles('.');
-    showToast(hadFullComputerAccess ? 'Workspace updated; full-computer access was disabled and the pairing key rotated.' : 'Workspace folder updated.');
+  const newRoot = result?.localWorkspaceRoot ?? result?.workspaceRoot ?? null;
+  if (result && newRoot !== previousRoot) {
+    showToast(hadFullComputerAccess
+      ? 'Separate local preview/Git workspace updated. Full-computer remote scope remains active; the pairing key rotated.'
+      : 'Workspace folder updated and the pairing key rotated.');
   }
 }
 
 $('#saveNgrokTokenBtn').addEventListener('click', saveNgrokToken);
 $('#startTunnelBtn').addEventListener('click', startTunnel);
 $('#cancelTunnelBtn').addEventListener('click', cancelTunnelStart);
+$('#pauseControlBtn').addEventListener('click', toggleControlPause);
 $('#stopTunnelBtn').addEventListener('click', stopTunnel);
 els.connectRobloxMcpBtn.addEventListener('click', connectRobloxMcp);
 els.disconnectRobloxMcpBtn.addEventListener('click', disconnectRobloxMcp);
+els.robloxMcpToggleBtn.addEventListener('click', toggleRobloxMcpIntegration);
+els.gitIntegrationToggleBtn.addEventListener('click', toggleGitIntegration);
+els.gitPushBtn.addEventListener('click', pushGitBranch);
 els.refreshGitBtn.addEventListener('click', () => loadGitDashboard());
 els.gitStageSelectedBtn.addEventListener('click', stageSelectedGitFiles);
 els.gitUnstageSelectedBtn.addEventListener('click', unstageSelectedGitFiles);

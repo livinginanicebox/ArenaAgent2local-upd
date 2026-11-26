@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { constants as fsConstants, promises as fs } from 'node:fs';
 import { isProtectedWorkspacePath } from './workspace.mjs';
+import { normalizeGithubToken } from './github-api.mjs';
 
 const execFileAsync = promisify(execFile);
 const MAX_TOOL_OUTPUT_BYTES = 48 * 1024;
@@ -58,11 +59,11 @@ function processError(error, executable) {
   return error?.message || `${executable} failed.`;
 }
 
-async function runExecutable(executable, args, { cwd, timeout = GIT_TIMEOUT_MS, maxBuffer = MAX_EXEC_BUFFER_BYTES } = {}) {
+async function runExecutable(executable, args, { cwd, timeout = GIT_TIMEOUT_MS, maxBuffer = MAX_EXEC_BUFFER_BYTES, env = null } = {}) {
   try {
     const result = await execFileAsync(executable, args, {
       cwd,
-      env: safeEnvironment(),
+      env: { ...safeEnvironment(), ...(env || {}) },
       encoding: 'utf8',
       timeout,
       maxBuffer,
@@ -127,7 +128,7 @@ async function runGit(root, args, options = {}) {
     '-c', 'core.pager=cat',
     ...filterOverrides,
     ...args,
-  ], { cwd: root, timeout: options.timeout || GIT_TIMEOUT_MS, maxBuffer: options.maxBuffer || MAX_EXEC_BUFFER_BYTES });
+  ], { cwd: root, timeout: options.timeout || GIT_TIMEOUT_MS, maxBuffer: options.maxBuffer || MAX_EXEC_BUFFER_BYTES, env: options.env || null });
 }
 
 async function requireGitSuccess(root, args, options) {
@@ -674,6 +675,190 @@ export async function executeGitCommit(root, message, expectedFingerprint = null
     hooksDisabled: true,
     signingDisabled: true,
   };
+}
+
+function validateGithubPushRemote(value) {
+  if (typeof value !== 'string' || !value || /[\u0000-\u0020\u007f]/.test(value)) {
+    throw new Error('GitHub push requires one clean HTTPS origin URL without credentials or whitespace.');
+  }
+  let parsed;
+  try { parsed = new URL(value); }
+  catch { throw new Error('GitHub push is limited to an HTTPS URL on github.com.'); }
+  if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'github.com' || parsed.port
+    || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error('GitHub push is limited to a credential-free HTTPS URL on github.com.');
+  }
+  if (parsed.pathname.includes('//')) throw new Error('GitHub push requires one repository path on github.com.');
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (segments.length !== 2) throw new Error('GitHub push requires an origin URL in the form https://github.com/owner/repository.git.');
+  const [owner, rawName] = segments;
+  const name = rawName.replace(/\.git$/i, '');
+  if (![owner, name].every((part) => /^[A-Za-z0-9_.-]+$/.test(part) && part !== '.' && part !== '..')) {
+    throw new Error('GitHub push requires a valid owner/repository path.');
+  }
+  return {
+    remoteUrl: `https://github.com/${owner}/${rawName}`,
+    remoteFullName: `${owner}/${name}`,
+  };
+}
+
+const MAX_GIT_PUSH_PREVIEW_COMMITS = 100;
+const GITHUB_ASKPASS_SOURCE = [
+  "const prompt = process.argv.slice(2).join(' ').toLowerCase();",
+  "if (prompt.includes('username')) process.stdout.write(`${process.env.ARENA_GITHUB_USERNAME || 'x-access-token'}\\n`);",
+  "else if (prompt.includes('password')) process.stdout.write(`${Buffer.from(process.env.ARENA_GITHUB_TOKEN_B64 || '', 'base64').toString('utf8')}\\n`);",
+  "else process.exitCode = 1;",
+].join('\n');
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+async function createGithubAskpass(token, username) {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'arena-local-github-auth-'));
+  await fs.chmod(directory, 0o700).catch(() => {});
+  const scriptPath = path.join(directory, 'askpass.cjs');
+  const environment = {
+    ARENA_GITHUB_TOKEN_B64: Buffer.from(token, 'utf8').toString('base64'),
+    ARENA_GITHUB_USERNAME: /^[A-Za-z0-9-]{1,39}$/.test(username || '') ? username : 'x-access-token',
+    ELECTRON_RUN_AS_NODE: '1',
+  };
+  try {
+    await fs.writeFile(scriptPath, GITHUB_ASKPASS_SOURCE, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    let launcherPath;
+    if (process.platform === 'win32') {
+      launcherPath = path.join(directory, 'askpass.cmd');
+      await fs.writeFile(launcherPath, [
+        '@echo off',
+        'setlocal DisableDelayedExpansion',
+        '"%ARENA_NODE_EXECUTABLE%" "%ARENA_ASKPASS_SCRIPT%" %*',
+        'exit /b %errorlevel%',
+        '',
+      ].join('\r\n'), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      environment.ARENA_NODE_EXECUTABLE = process.execPath;
+      environment.ARENA_ASKPASS_SCRIPT = scriptPath;
+      environment.GIT_ASKPASS = `"${launcherPath}"`;
+    } else {
+      launcherPath = path.join(directory, 'askpass');
+      await fs.writeFile(launcherPath, `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(scriptPath)} "$@"\n`, { encoding: 'utf8', mode: 0o700, flag: 'wx' });
+      await fs.chmod(launcherPath, 0o700);
+      environment.GIT_ASKPASS = launcherPath;
+    }
+    environment.GIT_ASKPASS_REQUIRE = 'force';
+    environment.GIT_TERMINAL_PROMPT = '0';
+    environment.GIT_CONFIG_NOSYSTEM = '1';
+    return { directory, environment };
+  } catch (error) {
+    await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+export async function prepareGitPushPreview(root) {
+  const repositoryRoot = await assertWorkspaceRepositoryRoot(root);
+  const [{ branch, head }, pushUrlResult] = await Promise.all([
+    readGitHead(repositoryRoot),
+    requireGitSuccess(repositoryRoot, ['remote', 'get-url', '--push', '--all', 'origin']),
+  ]);
+  if (!branch || branch === 'HEAD') throw new Error('Push requires a named local branch; detached HEAD is not pushed.');
+  await requireGitSuccess(repositoryRoot, ['check-ref-format', '--branch', branch]);
+  if (!head) throw new Error('The selected Git repository has no commit to push.');
+
+  const pushUrls = pushUrlResult.stdout.split(/\r?\n/).map((url) => url.trim()).filter(Boolean);
+  if (pushUrls.length !== 1) throw new Error('GitHub push requires exactly one configured push URL for origin.');
+  const { remoteUrl, remoteFullName } = validateGithubPushRemote(pushUrls[0]);
+  const trackingRef = `refs/remotes/origin/${branch}`;
+  const trackingResult = await runGit(repositoryRoot, ['rev-parse', '--verify', '--quiet', trackingRef]);
+  let commitsAhead;
+  let commitsBehind = 0;
+  let range = 'HEAD';
+  let upstreamKnown = false;
+  if (trackingResult.exitCode === 0) {
+    upstreamKnown = true;
+    const counts = await requireGitSuccess(repositoryRoot, ['rev-list', '--left-right', '--count', `${trackingRef}...HEAD`]);
+    const [behindText, aheadText] = counts.stdout.trim().split(/\s+/);
+    commitsBehind = Number(behindText);
+    commitsAhead = Number(aheadText);
+    if (!Number.isSafeInteger(commitsBehind) || !Number.isSafeInteger(commitsAhead)) throw new Error('Could not calculate the branch push preview.');
+    range = `${trackingRef}..HEAD`;
+  } else {
+    if (trackingResult.error && trackingResult.exitCode === null) throw new Error(gitFailure(trackingResult));
+    const countResult = await requireGitSuccess(repositoryRoot, ['rev-list', '--count', 'HEAD']);
+    commitsAhead = Number(trimLineEnding(countResult.stdout));
+    if (!Number.isSafeInteger(commitsAhead) || commitsAhead < 1) throw new Error('Could not calculate the branch push preview.');
+  }
+  if (!commitsAhead) throw new Error(`Branch “${branch}” has no committed changes to push to origin.`);
+  if (commitsAhead > MAX_GIT_PUSH_PREVIEW_COMMITS) {
+    throw new Error(`The local branch has ${commitsAhead} outgoing commits, above the ${MAX_GIT_PUSH_PREVIEW_COMMITS}-commit confirmation limit. Split the push into a smaller set of commits.`);
+  }
+  const log = await requireGitSuccess(repositoryRoot, [
+    'log', '-n', String(MAX_GIT_PUSH_PREVIEW_COMMITS + 1), '--no-color', '--no-decorate',
+    '--format=%h%x09%s', range,
+  ]);
+  const commits = log.stdout.split(/\r?\n/).filter(Boolean).map((line) => {
+    const separator = line.indexOf('\t');
+    const hash = separator < 0 ? line : line.slice(0, separator);
+    const subject = separator < 0 ? '' : line.slice(separator + 1);
+    return {
+      hash,
+      subject: subject.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180),
+    };
+  });
+  if (commits.length !== commitsAhead) throw new Error('Could not build a complete outgoing-commit preview; nothing was pushed.');
+  const fingerprint = crypto.createHash('sha256').update(JSON.stringify({
+    branch, head, remoteUrl, remoteFullName, trackingRef: upstreamKnown ? trackingRef : null,
+    commitsAhead, commitsBehind, commits,
+  })).digest('hex');
+  return {
+    branch,
+    head,
+    remoteName: 'origin',
+    remoteUrl,
+    remoteFullName,
+    trackingRef: upstreamKnown ? trackingRef : null,
+    upstreamKnown,
+    commitsAhead,
+    commitsBehind,
+    commits,
+    fingerprint,
+  };
+}
+
+export async function executeGitPush(root, token, username, expectedFingerprint) {
+  token = normalizeGithubToken(token);
+  const preview = await prepareGitPushPreview(root);
+  if (typeof expectedFingerprint !== 'string' || preview.fingerprint !== expectedFingerprint) {
+    throw new Error('The branch, remote, or outgoing commits changed after push review. Nothing was pushed; prepare and review a new push.');
+  }
+  const authentication = await createGithubAskpass(token, username);
+  try {
+    const destinationRef = `refs/heads/${preview.branch}`;
+    const result = await runGit(root, [
+      '-c', 'credential.helper=',
+      '-c', 'remote.origin.mirror=false',
+      '-c', 'http.extraHeader=',
+      '-c', 'http.https://github.com/.extraHeader=',
+      '-c', `http.${preview.remoteUrl}.extraHeader=`,
+      '-c', 'http.followRedirects=false',
+      '-c', 'http.sslVerify=true',
+      'push', '--no-verify', '--no-follow-tags', '--porcelain', '--recurse-submodules=no', 'origin', `${preview.head}:${destinationRef}`,
+    ], { timeout: 120_000, maxBuffer: MAX_EXEC_BUFFER_BYTES, env: authentication.environment });
+    if (result.exitCode !== 0) throw new Error(gitFailure(result));
+    return {
+      branch: preview.branch,
+      remoteFullName: preview.remoteFullName,
+      commitCount: preview.commitsAhead,
+      stdout: limitText(result.stdout).text,
+      stderr: limitText(result.stderr).text,
+      credentialStored: false,
+      hooksDisabled: true,
+      forced: false,
+    };
+  } finally {
+    await fs.rm(authentication.directory, { recursive: true, force: true }).catch(() => {});
+    authentication.environment.ARENA_GITHUB_TOKEN_B64 = '';
+    authentication.environment.ARENA_GITHUB_USERNAME = '';
+  }
 }
 
 export function parsePosixProcessListForTest(value) {

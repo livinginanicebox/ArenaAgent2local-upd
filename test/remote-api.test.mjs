@@ -30,16 +30,23 @@ async function makeFixture(t, initialMode = 'ask') {
   await fs.mkdir(workspacePath);
   await fs.writeFile(path.join(workspacePath, 'README.md'), '# Local bridge test\n');
   const workspaceRoot = await resolveWorkspaceRoot(workspacePath);
+  let gitWorkspaceRoot = workspaceRoot;
   let token = 'A'.repeat(43);
   let mode = initialMode;
   let fullComputerAccess = false;
   let fullComputerNoAskAuthorized = false;
+  let remoteWorkspaceRoot = workspaceRoot;
+  let gitIntegrationEnabled = true;
+  let robloxMcpEnabled = true;
   let robloxMcpStatus = 'disconnected';
   let robloxMcpError = '';
   let robloxTools = [];
   const robloxCalls = [];
   const api = createRemoteApi({
-    getWorkspaceRoot: () => workspaceRoot,
+    getWorkspaceRoot: () => remoteWorkspaceRoot,
+    getGitWorkspaceRoot: () => gitWorkspaceRoot,
+    getGitIntegrationEnabled: () => gitIntegrationEnabled,
+    getRobloxMcpEnabled: () => robloxMcpEnabled,
     getPairingToken: () => token,
     getPermissionMode: () => mode,
     getFullComputerAccess: () => fullComputerAccess,
@@ -68,6 +75,16 @@ async function makeFixture(t, initialMode = 'ask') {
     setMode: (value) => { mode = value; },
     setFullComputerAccess: (value) => { fullComputerAccess = value; },
     setFullComputerNoAskAuthorized: (value) => { fullComputerNoAskAuthorized = value; },
+    setRemoteWorkspaceRoot: (value) => { remoteWorkspaceRoot = value; },
+    setGitWorkspaceRoot: (value) => { gitWorkspaceRoot = value; },
+    setGitIntegrationEnabled: (value) => {
+      gitIntegrationEnabled = value;
+      if (!value) api.cancelPendingGitTasks('Local Git integration was disabled in the test fixture.');
+    },
+    setRobloxMcpEnabled: (value) => {
+      robloxMcpEnabled = value;
+      if (!value) api.cancelPendingRobloxTasks('Roblox Studio MCP was disabled in the test fixture.');
+    },
     setToken: (value) => { token = value; headers.authorization = `Bearer ${value}`; },
     setRobloxMcp: (tools, status = 'connected', error = '') => { robloxTools = tools; robloxMcpStatus = status; robloxMcpError = error; },
     robloxCalls,
@@ -124,6 +141,91 @@ test('remote bridge requires its bearer key and supports scoped read requests', 
   const healthState = await health.json();
   assert.equal(healthState.permissionMode, 'ask');
   assert.equal(healthState.fullComputerAccess, false);
+  assert.equal(healthState.controlPaused, false);
+});
+
+test('local control pause keeps health and the pairing link available, blocks tasks, and cancels pending approvals', async (t) => {
+  const fixture = await makeFixture(t);
+  const originalBase = fixture.base;
+  const originalAuthorization = fixture.headers.authorization;
+  const queuedResponse = await postTask(fixture, {
+    requestId: 'pause-pending-001',
+    action: 'write_file',
+    args: { path: 'paused.txt', content: 'must not run while paused' },
+  });
+  assert.equal(queuedResponse.status, 202);
+  const queued = await queuedResponse.json();
+  assert.equal(queued.status, 'awaiting_approval');
+
+  fixture.api.setControlPaused(true);
+  assert.equal(fixture.api.isControlPaused(), true);
+  const healthResponse = await fetch(`${fixture.base}/v1/health`, { headers: fixture.headers });
+  assert.equal(healthResponse.status, 200);
+  assert.equal((await healthResponse.json()).controlPaused, true);
+
+  const blockedTask = await postTask(fixture, {
+    requestId: 'pause-blocked-001',
+    action: 'read_file',
+    args: { path: 'README.md' },
+  });
+  assert.equal(blockedTask.status, 423);
+  assert.match((await blockedTask.json()).error, /paused on this computer/i);
+  const malformedPost = await fetch(`${fixture.base}/v1/tasks`, {
+    method: 'POST',
+    headers: fixture.headers,
+    body: '{not valid json',
+  });
+  assert.equal(malformedPost.status, 423, 'paused requests are rejected before action-body parsing');
+  const blockedUnknownRoute = await fetch(`${fixture.base}/v1/not-an-action`, { headers: fixture.headers });
+  assert.equal(blockedUnknownRoute.status, 423, 'all authenticated API routes except health are gated while paused');
+  assert.equal((await readTask(fixture, queued.taskId)).status, 423, 'task results must not be readable while paused');
+  const blockedToolList = await fetch(`${fixture.base}/v1/roblox/tools`, { headers: fixture.headers });
+  assert.equal(blockedToolList.status, 423);
+
+  const cancelled = fixture.api.getTasks().find((task) => task.taskId === queued.taskId);
+  assert.equal(cancelled.status, 'cancelled');
+  assert.match(cancelled.message, /paused locally/i);
+  assert.equal(await fs.access(path.join(fixture.workspaceRoot, 'paused.txt')).then(() => true, () => false), false);
+  assert.equal(fixture.base, originalBase, 'pause must not stop or replace the link');
+  assert.equal(fixture.headers.authorization, originalAuthorization, 'pause must not rotate the pairing key');
+
+  fixture.api.setControlPaused(false);
+  assert.equal(fixture.api.isControlPaused(), false);
+  const resumedHealth = await fetch(`${fixture.base}/v1/health`, { headers: fixture.headers });
+  assert.equal((await resumedHealth.json()).controlPaused, false);
+  assert.equal(fixture.base, originalBase);
+  assert.equal(fixture.headers.authorization, originalAuthorization);
+  const resumedTask = await postTask(fixture, {
+    requestId: 'pause-resume-001',
+    action: 'read_file',
+    args: { path: 'README.md' },
+  });
+  assert.equal(resumedTask.status, 202);
+  const result = await waitForTask(fixture, (await resumedTask.json()).taskId, (task) => task.status === 'completed');
+  assert.equal(result.result.content, '# Local bridge test\n');
+});
+
+test('pausing remote control does not interrupt an action that is already running', async (t) => {
+  const fixture = await makeFixture(t);
+  const submitted = await postTask(fixture, {
+    requestId: 'pause-running-001',
+    action: 'run_command',
+    args: { command: 'node -e "setTimeout(function(){console.log(\'finished-running\')},250)"' },
+  });
+  const queued = await submitted.json();
+  assert.equal(queued.status, 'awaiting_approval');
+
+  const approving = fixture.api.approveTask(queued.taskId, 'approve');
+  assert.equal(fixture.api.getTasks().find((task) => task.taskId === queued.taskId).status, 'running');
+  fixture.api.setControlPaused(true);
+  assert.equal(fixture.api.getTasks().find((task) => task.taskId === queued.taskId).status, 'running');
+  await approving;
+
+  const finishedWhilePaused = fixture.api.getTasks().find((task) => task.taskId === queued.taskId);
+  assert.equal(finishedWhilePaused.status, 'completed');
+  fixture.api.setControlPaused(false);
+  const completed = await waitForTask(fixture, queued.taskId, (task) => task.status === 'completed');
+  assert.match(completed.result.stdout, /finished-running/i);
 });
 
 test('writes are visible in the desktop queue and run only after approval', async (t) => {
@@ -163,8 +265,25 @@ test('full-computer access reads absolute paths and still requires Ask approval 
   assert.match(deniedReadTask.error, /Absolute paths/i);
 
   fixture.setFullComputerAccess(true);
+  fixture.setRemoteWorkspaceRoot(null);
   const health = await fetch(`${fixture.base}/v1/health`, { headers: { authorization: fixture.headers.authorization } });
-  assert.equal((await health.json()).fullComputerAccess, true);
+  const healthState = await health.json();
+  assert.equal(healthState.fullComputerAccess, true);
+  assert.equal(healthState.workspace, 'none');
+  assert.equal(healthState.gitWorkspaceSelected, true, 'Git remains separately scoped to the local repository');
+  const implicitRead = await postTask(fixture, {
+    requestId: 'outside-read-implicit-01',
+    action: 'read_file',
+    args: { path: 'README.md' },
+  });
+  assert.equal(implicitRead.status, 400);
+  assert.match((await implicitRead.json()).error, /explicit absolute path/i);
+  const implicitList = await postTask(fixture, {
+    requestId: 'outside-list-implicit-01',
+    action: 'list_files',
+    args: {},
+  });
+  assert.equal(implicitList.status, 400);
   const readResponse = await postTask(fixture, {
     requestId: 'outside-read-on-01',
     action: 'read_file',
@@ -173,6 +292,25 @@ test('full-computer access reads absolute paths and still requires Ask approval 
   const readTask = await waitForTask(fixture, (await readResponse.json()).taskId, (task) => task.status === 'completed');
   assert.equal(readTask.result.path, outsidePath);
   assert.equal(readTask.result.content, 'outside before\n');
+
+  const implicitCommand = await postTask(fixture, {
+    requestId: 'outside-command-implicit-01',
+    action: 'run_command',
+    args: { command: 'echo should-not-run' },
+  });
+  assert.equal(implicitCommand.status, 400);
+  const explicitCommand = await postTask(fixture, {
+    requestId: 'outside-command-explicit-01',
+    action: 'run_command',
+    args: { command: 'node -e "console.log(process.cwd())"', cwd: fixture.workspaceRoot },
+  });
+  assert.equal(explicitCommand.status, 202);
+  const commandQueued = await explicitCommand.json();
+  assert.equal(commandQueued.status, 'awaiting_approval');
+  await fixture.api.approveTask(commandQueued.taskId, 'approve');
+  const commandCompleted = await waitForTask(fixture, commandQueued.taskId, (task) => task.status === 'completed');
+  assert.equal(commandCompleted.result.stdout.trim(), fixture.workspaceRoot);
+  assert.equal(commandCompleted.result.cwd, fixture.workspaceRoot);
 
   const writeResponse = await postTask(fixture, {
     requestId: 'outside-write-001',
@@ -476,6 +614,96 @@ test('Git and process actions stay workspace-scoped and follow the existing perm
   assert.equal(automaticQueued.autoApproved, true);
   const automaticCompleted = await waitForTask(fixture, automaticQueued.taskId, (task) => task.status === 'completed');
   assert.equal(automaticCompleted.result.message, 'automatic commit');
+});
+
+test('Git integration can be disabled independently and full-computer mode keeps Git on a separate local workspace', async (t) => {
+  const fixture = await makeFixture(t);
+  await git(fixture.workspaceRoot, ['init', '--quiet']);
+  await git(fixture.workspaceRoot, ['config', 'user.name', 'Arena Local Test']);
+  await git(fixture.workspaceRoot, ['config', 'user.email', 'arena-local-test@example.invalid']);
+  await git(fixture.workspaceRoot, ['add', 'README.md']);
+  await git(fixture.workspaceRoot, ['commit', '--quiet', '-m', 'initial commit']);
+  await fs.writeFile(path.join(fixture.workspaceRoot, 'README.md'), '# Local bridge test\nstaged edit\n');
+  await git(fixture.workspaceRoot, ['add', 'README.md']);
+
+  const pendingCommit = await postTask(fixture, {
+    requestId: 'git-disable-pending-01', action: 'git_commit', args: { message: 'pending commit' },
+  });
+  const pending = await pendingCommit.json();
+  assert.equal(pending.status, 'awaiting_approval');
+
+  fixture.setGitIntegrationEnabled(false);
+  assert.equal(fixture.api.getTasks().find((task) => task.taskId === pending.taskId).status, 'cancelled');
+  const disabled = await postTask(fixture, {
+    requestId: 'git-disabled-001', action: 'git_status', args: {},
+  });
+  assert.equal(disabled.status, 503);
+
+  fixture.setGitIntegrationEnabled(true);
+  fixture.setGitWorkspaceRoot(null);
+  const noRepository = await postTask(fixture, {
+    requestId: 'git-no-workspace-01', action: 'git_log', args: {},
+  });
+  assert.equal(noRepository.status, 503);
+
+  fixture.setGitWorkspaceRoot(fixture.workspaceRoot);
+  fixture.setFullComputerAccess(true);
+  fixture.setRemoteWorkspaceRoot(null);
+  const health = await fetch(`${fixture.base}/v1/health`, { headers: fixture.headers });
+  const state = await health.json();
+  assert.equal(state.workspace, 'none');
+  assert.equal(state.gitWorkspaceSelected, true);
+  assert.equal(state.gitIntegrationEnabled, true);
+
+  const separateGitRequest = await postTask(fixture, {
+    requestId: 'git-separate-local-01', action: 'git_status', args: {},
+  });
+  assert.equal(separateGitRequest.status, 202);
+  const gitTask = await waitForTask(fixture, (await separateGitRequest.json()).taskId, (task) => task.status === 'completed');
+  assert.ok(gitTask.result.branch);
+});
+
+test('disabled Roblox Studio MCP cancels approvals and blocks local/remote tool calls', async (t) => {
+  const fixture = await makeFixture(t);
+  fixture.setRobloxMcp([{
+    name: 'execute_luau',
+    description: 'Run Luau.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        studio_id: { type: 'string' },
+        datamodel_type: { type: 'string', enum: ['Edit', 'Client', 'Server'] },
+        code: { type: 'string' },
+      },
+      required: ['studio_id', 'datamodel_type', 'code'],
+    },
+  }]);
+  const pendingRequest = await postTask(fixture, {
+    requestId: 'studio-disable-pending-01',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: { studio_id: 'studio-1', datamodel_type: 'Edit', code: 'return game.Name' } },
+  });
+  const pending = await pendingRequest.json();
+  assert.equal(pending.status, 'awaiting_approval');
+
+  fixture.setRobloxMcpEnabled(false);
+  assert.equal(fixture.api.getTasks().find((task) => task.taskId === pending.taskId).status, 'cancelled');
+  const tools = await fetch(`${fixture.base}/v1/roblox/tools`, { headers: fixture.headers });
+  assert.equal(tools.status, 200);
+  const toolState = await tools.json();
+  assert.equal(toolState.connected, false);
+  assert.equal(toolState.status, 'disabled');
+  assert.match(toolState.error, /disabled locally/i);
+  assert.deepEqual(toolState.tools, []);
+
+  const request = await postTask(fixture, {
+    requestId: 'studio-disabled-001',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: { studio_id: 'studio-1', datamodel_type: 'Edit', code: 'return game.Name' } },
+  });
+  assert.equal(request.status, 503);
+  assert.equal((await request.json()).error, 'Local bridge error.');
+  assert.equal(fixture.robloxCalls.length, 0);
 });
 
 test('Studio targeting and execute_luau requirements hold even when a tool schema omits them', async (t) => {

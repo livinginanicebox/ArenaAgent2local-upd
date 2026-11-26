@@ -38,7 +38,7 @@
         <strong>Local permission gate</strong>
         <p id="sidebarSecurityCopy">Arena can only request scoped actions. File writes, Git commits, and shell commands wait for you here.</p>
       </div>
-      <div class="sidebar-footer"><span class="mini-avatar">A</span><span><strong>Arena Local</strong><small>Desktop companion</small></span><span class="footer-version" id="appVersion">v0.1.5</span></div>
+      <div class="sidebar-footer"><span class="mini-avatar">A</span><span><strong>Arena Local</strong><small>Desktop companion</small></span><span class="footer-version" id="appVersion">v0.1.6</span></div>
     </aside>
 
     <main class="main-area">
@@ -52,7 +52,7 @@
 
       <div class="content-grid">
         <section class="primary-column">
-          <div class="full-computer-access-banner" id="fullComputerAccessBanner" role="alert" hidden><span class="full-access-banner-icon">‼</span><div><strong>EXTREMELY DANGEROUS · FULL-COMPUTER ACCESS ACTIVE</strong><p id="fullComputerAccessBannerCopy">Arena can list, read, search, and request writes anywhere this OS account can access, including private and credential files. Requested contents can be sent to Arena.ai. Ask mode still requires local write approval. Stop the remote link to disable this mode and rotate the pairing key.</p></div></div>
+          <div class="full-computer-access-banner" id="fullComputerAccessBanner" role="alert" hidden><span class="full-access-banner-icon">‼</span><div><strong id="fullComputerAccessBannerTitle">EXTREMELY DANGEROUS · FULL-COMPUTER ACCESS ACTIVE</strong><p id="fullComputerAccessBannerCopy">Arena can list, read, search, and request writes anywhere this OS account can access, including private and credential files. Requested contents can be sent to Arena.ai. Ask mode still requires local write approval. Stop the remote link to disable this mode and rotate the pairing key.</p></div></div>
           <div class="danger-mode-banner" id="dangerModeBanner" role="alert" hidden><span class="danger-banner-icon">!</span><div><strong id="dangerModeTitle">VERY DANGEROUS · NO-ASK MODE ACTIVE</strong><p id="dangerModeCopy">Arena file writes, Git commits, and terminal commands execute immediately. Shell commands can reach files outside the selected workspace. Stop the link, rotate the key, choose a different folder, switch to Ask or Read only, or close Arena Local to disable this mode.</p></div></div>
           <section class="hero-panel" id="connection">
             <div class="hero-copy">
@@ -80,10 +80,11 @@
               <div class="start-row"><button class="primary-button start-tunnel-button" id="startTunnelBtn" type="button" disabled><span class="start-icon">↗</span><span id="startTunnelLabel">Start remote connection</span></button><button class="secondary-button cancel-tunnel-button" id="cancelTunnelBtn" type="button" hidden>Cancel attempt</button><span class="start-note" id="startNote">The public link is created only when you start it.</span></div>
             </div>
             <div class="live-connection" id="liveConnection" hidden>
-              <div class="live-connection-main"><div class="live-icon"><span></span><span></span><span></span></div><div><strong>Your desktop is reachable</strong><small>HTTPS through ngrok · authenticated task API only</small></div><span class="live-tag">LIVE</span></div>
+              <div class="live-connection-main"><div class="live-icon"><span></span><span></span><span></span></div><div><strong>Your desktop is reachable</strong><small>HTTPS through ngrok · authenticated task API only</small></div><span class="live-tag" id="connectionLiveTag">LIVE</span></div>
               <div class="url-row"><span class="url-label">PUBLIC API URL</span><code id="tunnelUrl">—</code><button class="copy-url-button" id="copyUrlBtn" type="button" title="Copy URL">Copy</button></div>
               <div class="pairing-row"><div class="pairing-key-icon">⌑</div><div class="pairing-copy"><strong>Pair with your Arena session</strong><span>Copy the setup prompt into Arena.ai. It includes a temporary bearer key.</span></div><button class="primary-button copy-prompt-button" id="copyArenaPromptBtn" type="button">Copy Arena setup prompt <span>↗</span></button></div>
-              <div class="link-actions"><div class="key-hint"><span class="key-dot"></span> Pairing key ending in <strong id="pairingHint">••••••</strong><button class="text-button" id="rotatePairingBtn" type="button">Rotate key</button></div><button class="danger-text-button" id="stopTunnelBtn" type="button">Stop connection</button></div>
+              <div class="link-actions"><div class="key-hint"><span class="key-dot"></span> Pairing key ending in <strong id="pairingHint">••••••</strong><button class="text-button" id="rotatePairingBtn" type="button">Rotate key</button></div><div class="link-control-actions"><button class="secondary-button" id="pauseControlBtn" type="button" aria-pressed="false">Pause control</button><button class="danger-text-button" id="stopTunnelBtn" type="button">Stop connection</button></div></div>
+              <p class="control-pause-notice" id="controlPauseNotice" role="status" aria-live="polite" hidden>Remote control is paused on this computer. The HTTPS link and pairing key are unchanged; health checks still work, but other requests are blocked. Pending approvals are cancelled. Actions already running may finish.</p>
             </div>
             <div class="bridge-disclaimer"><span>!</span><p id="bridgeDisclaimerCopy">The bearer key lets Arena read files in this workspace. Rotate or stop the link to revoke it. Writes, Git commits, and shell commands pause for desktop approval.</p></div>
           </section>
@@ -93,13 +94,14 @@
               <div><span class="section-eyebrow">ROBLOX STUDIO · LOCAL MCP</span><h2 id="robloxMcpTitle">Connect Studio tools</h2></div>
               <span class="step-mark" id="robloxMcpBadge">OFFLINE</span>
             </div>
-            <p class="roblox-mcp-intro">Connect to Roblox Studio’s built-in MCP server. Arena can then use the discovered Studio tools through this authenticated bridge.</p>
+            <p class="roblox-mcp-intro">Connect to Roblox Studio’s built-in MCP server. The local Disable Studio MCP control blocks both control-center and remote tools, cancels pending approvals, and disconnects Studio.</p>
             <div class="roblox-mcp-status" id="robloxMcpStatus" data-state="disconnected" role="status" aria-live="polite">
               <span class="roblox-mcp-status-dot" aria-hidden="true"></span>
               <span id="robloxMcpStatusText">Not connected</span>
             </div>
             <p class="roblox-mcp-error" id="robloxMcpError" hidden></p>
             <div class="roblox-mcp-actions">
+              <button class="secondary-button" id="robloxMcpToggleBtn" type="button" aria-pressed="true">Disable Studio MCP</button>
               <button class="primary-button" id="connectRobloxMcpBtn" type="button">Connect Roblox Studio</button>
               <button class="secondary-button" id="disconnectRobloxMcpBtn" type="button" hidden>Disconnect Studio</button>
             </div>
@@ -114,9 +116,9 @@
           <section class="git-repository-card panel" id="gitRepository" aria-labelledby="gitRepositoryTitle">
             <div class="card-heading">
               <div><span class="section-eyebrow">LOCAL GIT · REPOSITORY WORKBENCH</span><h2 id="gitRepositoryTitle">Git & repository</h2></div>
-              <div class="git-heading-actions"><span class="step-mark git-status-badge" id="gitStatusBadge" data-state="loading">CHECKING</span><button class="refresh-button" id="refreshGitBtn" type="button" title="Refresh repository status" aria-label="Refresh repository status">↻</button></div>
+              <div class="git-heading-actions"><span class="step-mark git-status-badge" id="gitStatusBadge" data-state="loading">CHECKING</span><button class="secondary-button git-integration-toggle" id="gitIntegrationToggleBtn" type="button" aria-pressed="true">Disable Git</button><button class="refresh-button" id="refreshGitBtn" type="button" title="Refresh repository status" aria-label="Refresh repository status">↻</button></div>
             </div>
-            <p class="git-intro">Inspect changes, stage selected files, review staged-only diffs, and make local commits. These are local actions you initiate here; Ask/Read only gates requests from Arena. Git tools stay at the selected workspace root. No action pushes to a remote.</p>
+            <p class="git-intro">Inspect changes, stage files, review commits, and push a selected branch to GitHub. Disable Git here to block both this local workbench and Arena’s remote Git tools. In full-computer mode, Git requires a separately selected local repository.</p>
             <div class="git-repository-overview">
               <div class="git-overview-mark">⌘</div>
               <div class="git-overview-copy"><strong id="gitBranchName">Checking repository…</strong><span id="gitSummaryText">Local repository status</span></div>
@@ -139,7 +141,8 @@
                 <input class="file-filter" id="gitCommitMessage" type="text" maxlength="300" autocomplete="off" placeholder="Commit message for staged changes">
                 <button class="primary-button" id="gitPreviewCommitBtn" type="button" disabled>Review local commit</button>
               </div>
-              <p class="git-safety-copy">A complete staged diff preview and a separate local confirmation are required. Git hooks/signing are disabled. Commits are local only; there is no push button.</p>
+              <p class="git-safety-copy">A complete staged diff preview and a separate local confirmation are required. Git hooks/signing are disabled. A local commit does not push automatically.</p>
+              <div class="git-push-row"><button class="secondary-button" id="gitPushBtn" type="button" disabled>Review &amp; push branch to GitHub…</button><span>Shows outgoing commits and requires native local confirmation. No force-push; the PAT is used only for HTTPS authentication and never saved in Git config or a remote URL.</span></div>
 
               <details class="git-disclosure">
                 <summary>Recent history <span id="gitHistorySummary">12 commits max</span></summary>
@@ -165,11 +168,11 @@
                   </div>
                 </div>
                 <div class="git-github-block">
-                  <div><strong>GitHub account · read-only lookup</strong><p>A token is sent only to GitHub’s API to verify the account and list repositories. Arena never receives it; it is never written into a remote URL or Git config.</p></div>
+                  <div><strong>GitHub account · personal access token</strong><p>Classic and fine-grained PATs are supported. Fine-grained tokens need Contents read/write access for the selected repository; classic tokens generally need repo access for private repositories. The token is verified directly with GitHub and used for a push only after native local confirmation. It is never sent to Arena or written to Git config, a remote URL, or command-line arguments.</p></div>
                   <div class="git-token-row"><label class="sr-only" for="githubTokenInput">GitHub personal access token</label><input class="file-filter" id="githubTokenInput" type="password" autocomplete="new-password" maxlength="512" placeholder="Paste GitHub personal access token"><button class="secondary-button" id="saveGithubTokenBtn" type="button">Verify & save</button><button class="text-button" id="forgetGithubTokenBtn" type="button" hidden>Forget</button></div>
                   <div class="git-token-status" id="githubTokenStatus" role="status" aria-live="polite">No GitHub token saved.</div>
                   <div class="git-repo-picker"><label class="sr-only" for="githubRepositorySelect">GitHub repository</label><select id="githubRepositorySelect" disabled><option value="">Load your repositories</option></select><button class="secondary-button" id="loadGithubReposBtn" type="button" disabled>Load repositories</button><button class="secondary-button" id="setGithubOriginBtn" type="button" disabled>Set origin remote</button></div>
-                  <p class="git-safety-copy" id="githubRepositoryStatus">Repository lookup is read-only. Creating a remote changes only this computer’s local Git config.</p>
+                  <p class="git-safety-copy" id="githubRepositoryStatus">Repository listing is read-only. Setting origin changes local Git config; pushing is a separate reviewed action that requires an explicit confirmation.</p>
                 </div>
               </details>
 
@@ -197,12 +200,12 @@
 
         <aside class="inspector" aria-label="Workspace settings">
           <section class="inspector-panel" id="workspace">
-            <div class="inspector-heading"><div><span class="section-eyebrow">ACCESS SCOPE</span><h2>Workspace</h2></div><span class="scope-icon">⌂</span></div>
+            <div class="inspector-heading"><div><span class="section-eyebrow">REMOTE SCOPE · LOCAL PREVIEW</span><h2>Workspace</h2></div><span class="scope-icon">⌂</span></div>
             <div class="workspace-card"><div class="workspace-avatar">⌘</div><div class="workspace-meta"><strong id="workspaceName">Loading…</strong><span id="workspacePath">—</span></div></div>
             <button class="subtle-button" id="chooseWorkspaceBtn" type="button">Choose folder <span>↗</span></button>
-            <div class="workspace-scope"><span class="scope-check" id="workspaceScopeIcon">✓</span><span id="workspaceScopeCopy">Remote file actions stay inside this folder.</span></div>
+            <div class="workspace-scope"><span class="scope-check" id="workspaceScopeIcon">✓</span><span id="workspaceScopeCopy">Remote file actions stay inside this folder. Full-computer mode has no remote workspace; choose a separate local folder for preview and Git.</span></div>
             <button class="full-access-toggle" id="fullComputerAccessBtn" type="button">Enable full-computer access</button>
-            <p class="full-access-description" id="fullComputerAccessCopy">EXTREMELY DANGEROUS. Two local warnings are required. This session-only mode can expose private files and credentials to Arena.</p>
+            <p class="full-access-description" id="fullComputerAccessCopy">EXTREMELY DANGEROUS. Full-computer mode selects no remote workspace; remote file requests require explicit absolute paths. A separate local folder is needed for desktop preview and Git.</p>
           </section>
 
           <section class="inspector-panel permission-panel">
@@ -211,7 +214,7 @@
             <div class="select-wrap"><select id="permissionMode"><option value="ask">Ask before changes</option><option value="read-only">Read only</option><option value="no-ask">No approval — VERY DANGEROUS</option></select><span>⌄</span></div>
             <p id="permissionDescription" class="permission-description">Reads and Git/process inspection are available. Writes, Git commits, and commands pause for approval.</p>
             <div class="permission-list">
-              <div><span class="permission-check allowed">✓</span><span>List, read, search files</span><b>ALLOW</b></div>
+              <div><span class="permission-check allowed">✓</span><span>List, read, search files</span><b id="readRule">ALLOW</b></div>
               <div><span class="permission-check ask">!</span><span>Write files, commit Git, or run commands</span><b id="changeRule">ASK</b></div>
               <div><span class="permission-check blocked">×</span><span>Known credential files</span><b id="credentialRule">BLOCK</b></div>
             </div>
@@ -223,7 +226,7 @@
             <label class="sr-only" for="fileFilter">Filter visible files</label>
             <input class="file-filter" id="fileFilter" type="search" autocomplete="off" placeholder="Filter visible files…">
             <div class="file-list" id="fileList" aria-live="polite"><div class="loading-row"><span class="mini-spinner"></span> Loading files…</div></div>
-            <div class="file-foot" id="fileFoot">Arena can only see files in the selected folder.</div>
+            <div class="file-foot" id="fileFoot">Choose a local folder to enable desktop file preview. In full-computer mode, preview stays separate from remote file paths.</div>
           </section>
 
           <section class="safety-note">
@@ -254,7 +257,7 @@
     <div class="combined-unlock-top"><span>LOCAL-ONLY SAFETY LOCK</span><b>EXTREMELY DANGEROUS</b></div>
     <h2 id="fullNoAskUnlockTitle">Full computer + No-Ask</h2>
     <p class="combined-warning-quote" id="fullNoAskWarningText">you are SERIOUSLY playing with fire right now. please do NOT use this on a main computer and instead ONLY use this on a computer you do NOT care about at all. I'm serious. like. really serious. PLEASE. LISTEN. this setting is for purely expiermental purposes</p>
-    <p class="combined-unlock-detail">This gives the Arena session full file access and lets it write files, commit staged Git changes, and run shell commands without per-action approval. Git remains scoped to the selected repository and does not push. Your OS user account is not sandboxed; data loss and private-file exposure are possible. The pairing key will rotate when you enable it. This cannot be enabled by an Arena API request.</p>
+    <p class="combined-unlock-detail">This gives the Arena session full file access through explicit absolute paths and lets it write files, commit staged Git changes, run shell commands, and change Roblox Studio without per-action approval. Git uses a separately selected local repository; GitHub pushes are never remote actions and still require local review and native confirmation. Your OS user account is not sandboxed; data loss and private-file exposure are possible. The pairing key will rotate when you enable it. This cannot be enabled by an Arena API request.</p>
     <div class="combined-countdown" id="fullNoAskCountdown" role="status" aria-live="polite">Wait 30 seconds before the slider unlocks.</div>
     <progress class="combined-progress" id="fullNoAskProgress" max="30" value="0" aria-label="30-second safety waiting period"></progress>
     <label class="combined-slider-label" for="fullNoAskSlider">After the timer reaches zero, slide all the way to the right to unlock Continue.</label>

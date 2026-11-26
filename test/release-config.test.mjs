@@ -83,12 +83,14 @@ test('full-computer access is opt-in and temporary; combining with No-Ask requir
   assert.ok(desktopUi.includes('Enable full-computer access'));
   assert.ok(siteHtml.includes('EXTREMELY DANGEROUS'));
   assert.ok(agentGuide.includes('## Full computer access — EXTREMELY DANGEROUS'));
+  assert.ok(agentGuide.includes('its path is not exposed in the setup prompt or health response'));
+  assert.ok(desktopMain.includes('its path is not exposed in this prompt or health response'));
   assert.match(agentGuide, /reads run without per-file approval/i);
   assert.match(agentGuide, /30-second lockout, slide-to-unlock, and final native confirmation/i);
 });
 
 test('Git and GitHub workbench keeps credentials local and preserves staged-only, root-scoped safety', () => {
-  for (const method of ['getGitDashboard', 'initializeGitRepository', 'configureGitRepository', 'saveRepositoryInstructions', 'stageGitFiles', 'unstageGitFiles', 'previewGitCommit', 'commitStagedGit', 'saveGithubToken', 'forgetGithubToken', 'listGithubRepositories']) {
+  for (const method of ['getGitDashboard', 'initializeGitRepository', 'configureGitRepository', 'saveRepositoryInstructions', 'stageGitFiles', 'unstageGitFiles', 'previewGitCommit', 'commitStagedGit', 'saveGithubToken', 'forgetGithubToken', 'listGithubRepositories', 'setGitIntegrationEnabled', 'pushGitBranch']) {
     assert.match(desktopPreload, new RegExp(`\\b${method}: invoke\\(`), `Preload should explicitly allowlist ${method}.`);
   }
   assert.match(desktopMain, /encryptedGithubToken/);
@@ -102,16 +104,54 @@ test('Git and GitHub workbench keeps credentials local and preserves staged-only
   assert.doesNotMatch(remoteApi, /githubToken|saveGithubToken|listGithubRepositories/);
   assert.match(localTools, /assertWorkspaceRepositoryRoot\(root\)/);
   assert.match(localTools, /disableContentFilters: true/);
+  assert.match(localTools, /remote\.origin\.mirror=false/);
+  assert.match(localTools, /http\.sslVerify=true/);
+  assert.match(localTools, /--no-follow-tags/);
   assert.match(localTools, /gitChangedPaths\(root, true\)/);
   assert.match(localTools, /Repository-specific instructions saved locally as ARENA\.md/);
   assert.ok(desktopUi.includes('id="gitRepository"'));
   assert.ok(desktopUi.includes('id="githubTokenInput"'));
   assert.ok(desktopUi.includes('id="repositoryInstructionsInput"'));
   assert.ok(desktopUi.includes('A native confirmation is required next'));
-  assert.match(desktopAppJs, /No GitHub write or push occurred/);
-  assert.match(desktopUi, /local actions you initiate here; Ask\/Read only gates requests from Arena/);
+  assert.match(desktopMain, /arena:push-git-branch/);
+  assert.match(desktopMain, /prepareGitPushPreview\(repositoryRoot\)/);
+  assert.match(desktopMain, /executeGitPush\(repositoryRoot, tokenForPush, loginForPush, preview\.fingerprint\)/);
+  assert.match(desktopMain, /githubToken !== tokenForPush \|\| githubLogin !== loginForPush/);
+  assert.match(desktopPreload, /setRobloxMcpEnabled: invoke\('arena:set-roblox-mcp-enabled'\)/);
+  assert.match(desktopPreload, /pushGitBranch: invoke\('arena:push-git-branch'\)/);
+  assert.ok(desktopUi.includes('id="gitIntegrationToggleBtn"'));
+  assert.ok(desktopUi.includes('id="gitPushBtn"'));
+  assert.ok(desktopUi.includes('id="robloxMcpToggleBtn"'));
+  assert.match(desktopUi, /No force-push/);
+  assert.match(desktopAppJs, /setGitIntegrationEnabled\(enabled\)/);
+  assert.match(desktopAppJs, /setRobloxMcpEnabled\(enabled\)/);
+  assert.match(desktopAppJs, /async function pushGitBranch\(\)/);
+  assert.match(desktopUi, /Review &amp; push branch to GitHub/);
+  assert.match(desktopUi, /Disable Git here to block both this local workbench and Arena’s remote Git tools/);
   assert.ok(agentGuide.includes('check the selected repository root for `ARENA.md`'));
-  assert.ok(agentGuide.includes('No GitHub write or automatic push is available'));
+  assert.ok(agentGuide.includes('there is no push action in the remote task API'));
+  assert.ok(agentGuide.includes('a separately selected local folder in full-computer mode'));
+});
+
+test('local control pause preserves the connection and the agent guide handles paused and visual inspection states', () => {
+  assert.match(desktopMain, /controlPaused: Boolean\(api\?\.isControlPaused\(\)\)/);
+  assert.match(desktopMain, /api\.setControlPaused\(paused\)/);
+  assert.match(desktopMain, /arena:set-control-paused/);
+  assert.match(desktopPreload, /setControlPaused: invoke\('arena:set-control-paused'\)/);
+  assert.match(remoteApi, /new HttpError\(423, CONTROL_PAUSED_MESSAGE\)/);
+  assert.match(remoteApi, /controlPaused,/);
+  assert.match(remoteApi, /setControlPaused,/);
+  assert.ok(desktopUi.includes('id="pauseControlBtn"'));
+  assert.ok(desktopUi.includes('id="controlPauseNotice"'));
+  assert.ok(desktopUi.includes('id="fullComputerAccessBannerTitle"'));
+  assert.match(desktopAppJs, /setControlPaused\(pause\)/);
+  assert.match(desktopAppJs, /fullComputerAccessBannerTitle\.textContent = controlPaused/);
+  assert.match(desktopAppJs, /same link and pairing key/);
+  assert.match(agentGuide, /If `controlPaused` is `true`, stop and wait/);
+  assert.match(agentGuide, /other than health checks are blocked with HTTP 423/);
+  assert.match(agentGuide, /transfer only that specific, relevant PNG to a temporary file in your Arena sandbox/);
+  assert.match(agentGuide, /inspect it with an image-capable viewer, then delete the sandbox copy/);
+  assert.match(agentGuide, /48 KB command-output cap/);
 });
 
 test('legacy branch-based Pages root redirects to the styled product page', () => {
