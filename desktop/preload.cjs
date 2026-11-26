@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('arenaLocal', {
   forgetNgrokToken: invoke('arena:forget-ngrok-token'),
   startTunnel: invoke('arena:start-tunnel'),
   stopTunnel: invoke('arena:stop-tunnel'),
+  connectRobloxMcp: invoke('arena:connect-roblox-mcp'),
+  disconnectRobloxMcp: invoke('arena:disconnect-roblox-mcp'),
   rotatePairingToken: invoke('arena:rotate-pairing-token'),
   copyArenaInstructions: invoke('arena:copy-instructions'),
   copyTunnelUrl: invoke('arena:copy-tunnel-url'),

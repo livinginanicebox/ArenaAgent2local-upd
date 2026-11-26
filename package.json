@@ -2,7 +2,7 @@
   "name": "arena-local-desktop",
   "version": "0.1.3",
   "private": true,
-  "description": "A permissioned desktop bridge for Arena AI Bash requests to a local workspace.",
+  "description": "A permissioned desktop bridge for Arena AI Bash requests, scoped files, Git/process tools, and Roblox Studio MCP.",
   "type": "module",
   "main": "desktop/main.mjs",
   "engines": {
@@ -14,6 +14,7 @@
     "dist": "electron-builder"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
     "@ngrok/ngrok": "^1.8.1"
   },
   "devDependencies": {

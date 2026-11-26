@@ -65,6 +65,14 @@ const els = {
   approvalQueue: $('#approvalQueue'),
   approvalCount: $('#approvalCount'),
   activityList: $('#activityList'),
+  robloxMcpBadge: $('#robloxMcpBadge'),
+  robloxMcpStatus: $('#robloxMcpStatus'),
+  robloxMcpStatusText: $('#robloxMcpStatusText'),
+  robloxMcpError: $('#robloxMcpError'),
+  robloxMcpToolsSummary: $('#robloxMcpToolsSummary'),
+  robloxMcpToolsList: $('#robloxMcpToolsList'),
+  connectRobloxMcpBtn: $('#connectRobloxMcpBtn'),
+  disconnectRobloxMcpBtn: $('#disconnectRobloxMcpBtn'),
   fileBreadcrumbs: $('#fileBreadcrumbs'),
   fileFilter: $('#fileFilter'),
   fileList: $('#fileList'),
@@ -125,6 +133,7 @@ function applyState(state) {
   els.permissionMode.value = state.permissionMode || 'ask';
   updatePermissionCopy();
   updateConnectionPanel();
+  updateRobloxMcpPanel();
   renderApprovals();
   renderActivity();
 
@@ -190,6 +199,54 @@ function updateConnectionPanel() {
   els.ngrokTokenInput.placeholder = configured ? 'Saved token — leave blank to keep' : 'Paste ngrok authtoken';
 }
 
+function updateRobloxMcpPanel() {
+  const mcp = appState?.robloxMcp || {};
+  const status = mcp.status || 'disconnected';
+  const connected = status === 'connected';
+  const busy = status === 'connecting' || status === 'disconnecting';
+  const tools = Array.isArray(mcp.tools) ? mcp.tools : [];
+  const labels = {
+    connected: `Connected · ${mcp.toolCount ?? tools.length} tools available`,
+    connecting: 'Starting the local Studio MCP process…',
+    disconnecting: 'Disconnecting from Studio…',
+    error: 'Roblox Studio MCP connection failed',
+    unsupported: 'Roblox Studio MCP is not supported on this operating system',
+    disconnected: mcp.installed === false ? 'Roblox Studio MCP launcher not found' : 'Not connected',
+  };
+  els.robloxMcpStatus.dataset.state = status;
+  els.robloxMcpStatusText.textContent = labels[status] || labels.disconnected;
+  els.robloxMcpBadge.textContent = status === 'connected' ? 'CONNECTED'
+    : status === 'connecting' ? 'CONNECTING…'
+      : status === 'disconnecting' ? 'STOPPING…'
+        : status === 'error' ? 'ERROR'
+          : status === 'unsupported' ? 'UNSUPPORTED'
+            : mcp.installed === false ? 'NOT FOUND' : 'OFFLINE';
+  const message = mcp.error || (mcp.supported && mcp.installed === false
+    ? 'Install or update Roblox Studio, then enable Assistant → Manage MCP Servers → Enable Studio as MCP server.'
+    : '');
+  els.robloxMcpError.textContent = message;
+  els.robloxMcpError.hidden = !message;
+  els.connectRobloxMcpBtn.hidden = connected;
+  els.connectRobloxMcpBtn.disabled = busy || !mcp.supported || mcp.installed === false;
+  els.connectRobloxMcpBtn.textContent = status === 'connecting' ? 'Connecting…' : 'Connect Roblox Studio';
+  els.disconnectRobloxMcpBtn.hidden = !connected;
+  els.disconnectRobloxMcpBtn.disabled = busy;
+  els.robloxMcpToolsSummary.textContent = `Available tools · ${connected ? (mcp.toolCount ?? tools.length) : 0}`;
+  els.robloxMcpToolsList.replaceChildren();
+  if (!connected || !tools.length) {
+    els.robloxMcpToolsList.append(makeElement('li', '', connected ? 'Studio has not reported any tools.' : 'Connect to Studio to discover its tools.'));
+    return;
+  }
+  for (const tool of tools) {
+    const item = document.createElement('li');
+    item.append(makeElement('span', '', tool.name));
+    const permissionLabel = tool.permission === 'read-only' ? 'READ ONLY' : 'APPROVAL REQUIRED';
+    const description = String(tool.description || '').trim();
+    item.append(makeElement('small', '', description ? `${permissionLabel} · ${description}` : permissionLabel));
+    els.robloxMcpToolsList.append(item);
+  }
+}
+
 function updateScopePanel() {
   const fullComputerAccess = Boolean(appState?.fullComputerAccess);
   const live = Boolean(appState?.tunnelActive || appState?.tunnelStarting || appState?.tunnelStopping);
@@ -217,14 +274,14 @@ function updateScopePanel() {
         : 'EXTREMELY DANGEROUS: requires two local warnings and removes the workspace boundary.';
   els.fullComputerAccessCopy.textContent = fullComputerAccess
     ? noAsk
-      ? 'EXTREMELY DANGEROUS: Arena can read private files and credentials; writes and shell commands run without local approval. Stop the link to disable both modes and rotate the key.'
-      : 'EXTREMELY DANGEROUS: private files and credentials may be readable and sent to Arena. Ask mode requires local write approval. No-Ask is available only through the local 30-second slide-to-unlock safety flow.'
+      ? 'EXTREMELY DANGEROUS: Arena can read private files and credentials; writes, Git commits, shell commands, and mutating Roblox Studio tools run without local approval. Stop the link to disable both modes and rotate the key.'
+      : 'EXTREMELY DANGEROUS: private files and credentials may be readable and sent to Arena. Ask mode requires local approval for writes, Git commits, and mutating Studio tools. Git actions remain scoped to the selected repository root. No-Ask is available only through the local 30-second slide-to-unlock safety flow.'
     : noAsk
       ? 'EXTREMELY DANGEROUS. Switch to Ask or Read only before enabling full-computer access.'
       : 'EXTREMELY DANGEROUS. Two native warnings required. Must be enabled while disconnected; resets when the link stops. Combining with No-Ask requires a separate 30-second local slide-to-unlock and final warning.';
   els.fullComputerAccessBannerCopy.textContent = noAsk
-    ? 'Full-computer access is combined with No-Ask: file reads can expose private files and credentials to Arena.ai; writes and shell commands run immediately as your OS user without per-action approval. Stop the link to disable this mode and rotate the pairing key.'
-    : 'Arena can list, read, search, and request writes anywhere this OS account can access, including private and credential files. Requested contents can be sent to Arena.ai. Writes follow the selected permission mode. Stop the remote link to disable full-computer access and rotate the pairing key.';
+    ? 'Full-computer access is combined with No-Ask: file reads can expose private files and credentials to Arena.ai; writes, Git commits, shell commands, and mutating Roblox Studio tools run immediately without per-action approval. Stop the link to disable this mode and rotate the pairing key.'
+    : 'Arena can list, read, search, and request writes anywhere this OS account can access, including private and credential files. Requested contents can be sent to Arena.ai. Writes, Git commits, and mutating Studio tools follow the selected permission mode; Git stays rooted at the selected repository. Stop the remote link to disable full-computer access and rotate the pairing key.';
   els.fullComputerAccessBanner.hidden = !fullComputerAccess;
   els.credentialRule.textContent = fullComputerAccess ? 'ACCESSIBLE' : 'BLOCK';
   els.credentialRule.classList.toggle('full-access-rule', fullComputerAccess);
@@ -240,33 +297,33 @@ function updatePermissionCopy() {
   const fullComputerAccess = Boolean(appState?.fullComputerAccess);
   els.sidebarSecurityCopy.textContent = fullComputerAccess
     ? noAsk
-      ? 'EXTREMELY DANGEROUS: Arena can read files anywhere and write or run commands without approval.'
-      : 'EXTREMELY DANGEROUS: Arena can read files anywhere this OS account can access. Writes still follow your permission mode.'
+      ? 'EXTREMELY DANGEROUS: Arena can read files anywhere and run writes, Git commits, commands, and mutating Roblox Studio tools without approval.'
+      : 'EXTREMELY DANGEROUS: Arena can read files anywhere this OS account can access. Writes, Git commits, and Roblox Studio changes still follow your permission mode; Git remains scoped to the selected repository.'
     : noAsk
-      ? 'VERY DANGEROUS: Arena can write files and run shell commands without approval.'
+      ? 'VERY DANGEROUS: Arena can write files, commit staged Git changes, run shell commands, and change Roblox Studio without approval.'
       : readOnly
-        ? 'File reads are available. Writes and terminal commands are blocked.'
-        : 'Arena can only request scoped actions. File writes and shell commands wait for you here.';
+        ? 'File reads, Git inspection, process names/PIDs, and known read-only Studio tools are available. Writes, Git commits, commands, and other Studio tools are blocked.'
+        : 'Arena can only request scoped actions. File writes, Git commits, shell commands, and changing Roblox Studio tools wait for you here.';
   els.bridgeDisclaimerCopy.textContent = fullComputerAccess
     ? noAsk
-      ? 'EXTREMELY DANGEROUS: full-computer reads plus automatic file writes and shell commands are active. Private data may be sent to Arena.ai; commands run with your normal OS-user permissions.'
-      : 'EXTREMELY DANGEROUS full-computer access is on. Arena can read private and credential files; requested contents are sent to Arena.ai. Stop the remote link to disable this mode and rotate the pairing key.'
+      ? 'EXTREMELY DANGEROUS: full-computer reads plus automatic file writes, Git commits, shell commands, and mutating Roblox Studio calls are active. Private data may be sent to Arena.ai; commands run with your normal OS-user permissions.'
+      : 'EXTREMELY DANGEROUS full-computer access is on. Arena can read private and credential files; requested contents are sent to Arena.ai. Writes, Git commits, and mutating Studio tools still follow your permission mode; Git remains rooted at the selected repository.'
     : noAsk
-      ? 'VERY DANGEROUS: writes and shell commands execute immediately without desktop approval. Stop the link, rotate the key, or switch to Ask or Read only to disable this mode.'
+      ? 'VERY DANGEROUS: writes, Git commits, shell commands, and mutating Roblox Studio tools execute immediately without desktop approval. Stop the link, rotate the key, or switch to Ask or Read only to disable this mode.'
       : readOnly
-        ? 'The bearer key lets Arena read files in this workspace. File writes and shell commands are blocked in Read only mode.'
-        : 'The bearer key lets Arena read files in this workspace. Writes and shell commands pause for desktop approval unless you enable VERY DANGEROUS no-ask mode.';
+        ? 'The bearer key lets Arena read files in this workspace. File writes, Git commits, shell commands, and mutating Roblox Studio tools are blocked in Read only mode.'
+        : 'The bearer key lets Arena read files in this workspace. Writes, Git commits, commands, and mutating Roblox Studio tools pause for desktop approval unless you enable VERY DANGEROUS no-ask mode.';
   els.permissionDescription.textContent = fullComputerAccess
     ? noAsk
-      ? 'EXTREMELY DANGEROUS: reads can reach any location; writes and commands run immediately without approval.'
+      ? 'EXTREMELY DANGEROUS: file reads can reach any location; writes, Git commits, commands, and mutating Studio tools run without approval. Git remains scoped to the selected repository.'
       : readOnly
-        ? 'EXTREMELY DANGEROUS: file reads can reach any location; writes and commands remain blocked.'
-        : 'EXTREMELY DANGEROUS: file reads can reach any location. Writes and commands still wait for local approval.'
+        ? 'EXTREMELY DANGEROUS: file reads can reach any location; writes, Git commits, commands, and mutating Studio tools are blocked.'
+        : 'EXTREMELY DANGEROUS: file reads can reach any location. Writes, Git commits, commands, and mutating Studio tools wait for local approval.'
     : noAsk
-      ? 'VERY DANGEROUS: every remote write and shell command runs immediately without approval.'
+      ? 'VERY DANGEROUS: every remote write, Git commit, shell command, and mutating Studio tool runs immediately without approval.'
       : readOnly
-        ? 'Arena can inspect files, but writes and terminal commands are blocked.'
-        : 'Reads are available. Writes and commands pause for your desktop approval.';
+        ? 'Arena can inspect files, Git history/diffs, and process names/PIDs and use known read-only Studio tools; writes, Git commits, commands, and other Studio tools are blocked.'
+        : 'Reads and local Git/process inspection are available. Writes, Git commits, commands, and mutating Studio calls pause for your desktop approval.';
   els.changeRule.textContent = noAsk ? 'AUTO' : readOnly ? 'BLOCK' : 'ASK';
   els.changeRule.classList.toggle('blocked-state', readOnly);
   els.changeRule.classList.toggle('no-ask-state', noAsk);
@@ -274,8 +331,8 @@ function updatePermissionCopy() {
     ? 'EXTREMELY DANGEROUS · FULL COMPUTER + NO-ASK ACTIVE'
     : 'VERY DANGEROUS · NO-ASK MODE ACTIVE';
   els.dangerModeCopy.textContent = fullComputerAccess
-    ? 'Full-computer reads and automatic file writes and shell commands are active. Actions run as your OS user without per-action approval. Stop the link, rotate the key, or close Arena Local to disable this mode.'
-    : 'Arena file writes and terminal commands execute immediately. Shell commands can reach files outside the selected workspace. Stop the link, rotate the key, choose a different folder, switch to Ask or Read only, or close Arena Local to disable this mode.';
+    ? 'Full-computer reads and automatic file writes, Git commits, shell commands, and mutating Roblox Studio tools are active. Actions run as your OS user or in open Studio without per-action approval. Stop the link, rotate the key, or close Arena Local to disable this mode.'
+    : 'Arena file writes, Git commits, terminal commands, and mutating Roblox Studio tools execute immediately. Shell commands can reach files outside the selected workspace. Stop the link, rotate the key, choose a different folder, switch to Ask or Read only, or close Arena Local to disable this mode.';
   els.dangerModeBanner.hidden = !noAsk;
   updateScopePanel();
 }
@@ -288,6 +345,12 @@ function taskTitle(task) {
     case 'search_text': return `Search · “${String(args.query || '').slice(0, 45)}”`;
     case 'write_file': return `Write · ${args.path || 'file'}`;
     case 'run_command': return `Run · ${String(args.command || '').slice(0, 45)}`;
+    case 'git_status': return 'Git status';
+    case 'git_diff': return 'Git diff · staged changes';
+    case 'git_log': return `Git log · ${args.limit || 20} commits`;
+    case 'git_commit': return `Git commit · ${String(args.message || '').slice(0, 45)}`;
+    case 'list_processes': return 'List running processes';
+    case 'roblox_tool': return `Roblox Studio · ${args.name || 'MCP tool'}`;
     default: return task.action || 'Remote request';
   }
 }
@@ -318,10 +381,10 @@ function renderApprovals() {
     const copy = makeElement('div');
     copy.append(makeElement('strong', '', 'Nothing needs approval'));
     const emptyMessage = appState?.permissionMode === 'no-ask'
-      ? 'No actions pause here. File writes and shell commands run without a prompt.'
+      ? 'No actions pause here. File writes, Git commits, shell commands, and mutating Roblox Studio tools can run without a prompt.'
       : appState?.permissionMode === 'read-only'
-        ? 'File writes and shell commands are blocked in Read only mode.'
-        : 'When Arena requests a file write or terminal command, review it here first.';
+        ? 'File writes, Git commits, shell commands, and mutating Roblox Studio tools are blocked in Read only mode.'
+        : 'When Arena requests a file write, Git commit, terminal command, or changing Roblox Studio tool, review it here first.';
     copy.append(makeElement('p', '', emptyMessage));
     empty.append(copy);
     els.approvalQueue.append(empty);
@@ -355,10 +418,13 @@ function appendDiff(pre, preview) {
 
 function renderApprovalCard(task) {
   const card = makeElement('article', 'remote-approval-card');
+  const isRobloxTool = task.action === 'roblox_tool';
+  const isGitCommit = task.action === 'git_commit';
+  card.dataset.action = task.action;
   const head = makeElement('div', 'remote-approval-head');
-  const change = task.action === 'write_file' || task.action === 'run_command';
   const outsideWorkspace = task.action === 'write_file' && task.preview?.outsideWorkspace === true;
-  head.append(makeElement('span', 'remote-approval-icon', task.action === 'run_command' ? '$' : '✎'));
+  const icon = task.action === 'run_command' ? '$' : isRobloxTool ? 'R' : isGitCommit ? 'G' : '✎';
+  head.append(makeElement('span', 'remote-approval-icon', icon));
   const title = makeElement('div', 'remote-approval-title');
   title.append(makeElement('strong', '', taskTitle(task)));
   title.append(makeElement('small', '', `Arena request · ${task.requestId}`));
@@ -366,9 +432,20 @@ function renderApprovalCard(task) {
   card.append(head);
   card.append(makeElement('div', 'remote-approval-description', task.action === 'run_command'
     ? 'This exact shell command will run from your workspace with your OS account permissions. It is not sandboxed.'
-    : outsideWorkspace
-      ? 'EXTREMELY DANGEROUS: this write targets a file outside the selected workspace. Verify the full path and complete diff before approving.'
-      : 'Arena is asking to change a file in the selected workspace. Review the complete proposed diff.'));
+    : isRobloxTool
+      ? 'This tool runs in your open Roblox Studio session. It may run Luau, access local assets or Roblox services, or change a place. Review the exact tool name and all arguments before approving.'
+      : isGitCommit
+        ? 'This creates a local commit from the currently staged changes only. It does not push. Arena Local disables Git hooks and commit signing for this action; inspect the complete staged diff and message.'
+        : outsideWorkspace
+          ? 'EXTREMELY DANGEROUS: this write targets a file outside the selected workspace. Verify the full path and complete diff before approving.'
+          : 'Arena is asking to change a file in the selected workspace. Review the complete proposed diff.'));
+
+  if (isRobloxTool && task.robloxToolDescription) {
+    const toolDescription = makeElement('details', 'roblox-tool-description');
+    toolDescription.append(makeElement('summary', '', 'Show Studio-provided tool description'));
+    toolDescription.append(makeElement('p', '', String(task.robloxToolDescription).slice(0, 2_000)));
+    card.append(toolDescription);
+  }
 
   if (task.action === 'run_command') {
     const warning = makeElement('div', 'preview-box');
@@ -376,6 +453,26 @@ function renderApprovalCard(task) {
     warning.append(makeElement('pre', '', task.args?.command || ''));
     card.append(warning);
     card.append(makeElement('div', 'command-warning', '⚠  Shell can reach files outside this workspace. Only approve commands you understand.'));
+  } else if (isRobloxTool) {
+    const box = makeElement('div', 'preview-box');
+    box.append(makeElement('div', 'preview-label', 'Exact Roblox Studio MCP call'));
+    box.append(makeElement('code', 'preview-path', task.args?.name || 'Unknown tool'));
+    const args = makeElement('pre', 'roblox-tool-arguments', JSON.stringify(task.args?.arguments ?? {}, null, 2));
+    box.append(args);
+    card.append(box);
+    card.append(makeElement('div', 'command-warning', '⚠  Studio tools can change live place data or execute code. Approval covers only this exact call.'));
+  } else if (isGitCommit) {
+    const preview = task.preview || {};
+    const box = makeElement('div', 'preview-box');
+    box.append(makeElement('div', 'preview-label', `Staged diff · ${preview.fileCount ?? 0} file(s)`));
+    box.append(makeElement('code', 'preview-path', `Branch: ${preview.branch || 'HEAD'} · Current HEAD: ${preview.head || '(unborn)'}`));
+    box.append(makeElement('div', 'preview-label', 'Commit message'));
+    box.append(makeElement('pre', 'git-commit-message', preview.message || task.args?.message || ''));
+    box.append(makeElement('div', 'preview-label', 'Files'));
+    box.append(makeElement('pre', 'git-commit-files', Array.isArray(preview.files) ? preview.files.join(' · ') : ''));
+    box.append(makeElement('pre', 'git-commit-diff', preview.diff || 'No textual diff. Review the staged files above.'));
+    card.append(box);
+    card.append(makeElement('div', 'command-warning', '⚠  Approval applies only to this exact staged state and message. Hooks/signing are disabled; the commit stays local and is not pushed.'));
   } else if (task.preview) {
     const box = makeElement('div', `preview-box${outsideWorkspace ? ' external-write-preview' : ''}`);
     box.append(makeElement('div', 'preview-label', outsideWorkspace
@@ -391,7 +488,7 @@ function renderApprovalCard(task) {
 
   const controls = makeElement('div', 'approval-buttons');
   controls.append(approvalButton(task, 'Approve once', 'approve', 'approve-once'));
-  controls.append(approvalButton(task, 'Allow exact action for session', 'approve_session', 'approve-session'));
+  if (!isGitCommit) controls.append(approvalButton(task, 'Allow exact action for session', 'approve_session', 'approve-session'));
   controls.append(approvalButton(task, 'Deny', 'deny', 'deny-action'));
   card.append(controls);
   return card;
@@ -419,13 +516,15 @@ function renderActivity() {
   const tasks = [...(appState?.tasks || [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8);
   els.activityList.replaceChildren();
   if (!tasks.length) {
-    els.activityList.append(makeElement('div', 'empty-activity', 'No requests yet. Start a connection, then prompt Arena.ai to inspect your workspace.'));
+    els.activityList.append(makeElement('div', 'empty-activity', 'No requests yet. Start a connection, then ask Arena.ai to inspect your workspace or use connected Roblox Studio tools.'));
     return;
   }
   for (const task of tasks) {
     const row = makeElement('div', `activity-row${task.autoApproved ? ' auto-approved' : ''}`);
-    const change = task.action === 'write_file' || task.action === 'run_command';
-    row.append(makeElement('span', `activity-action-icon${change ? ' change' : ''}`, task.action === 'run_command' ? '$' : change ? '✎' : '⌕'));
+    const isRobloxTool = task.action === 'roblox_tool';
+    const change = task.action === 'write_file' || task.action === 'run_command' || task.action === 'git_commit' || (isRobloxTool && task.robloxPermission !== 'read-only');
+    const activityIconClass = `activity-action-icon${change ? ' change' : ''}${isRobloxTool ? ' roblox' : ''}`;
+    row.append(makeElement('span', activityIconClass, task.action === 'run_command' ? '$' : isRobloxTool ? 'R' : task.action === 'git_commit' ? 'G' : task.action === 'list_processes' ? 'P' : change ? '✎' : '⌕'));
     const main = makeElement('div', 'activity-main');
     main.append(makeElement('strong', '', taskTitle(task)));
     const activitySummary = task.autoApproved
@@ -571,6 +670,23 @@ async function saveNgrokToken() {
   } finally {
     button.disabled = Boolean(appState?.tunnelStarting || appState?.tunnelStopping || appState?.tunnelActive);
   }
+}
+
+async function connectRobloxMcp() {
+  try {
+    const state = await window.arenaLocal.connectRobloxMcp();
+    applyState(state);
+    if (state.robloxMcp?.status === 'connected') {
+      showToast(`Roblox Studio MCP connected · ${state.robloxMcp.toolCount} tools discovered.`);
+    }
+  } catch (error) {
+    showToast(error.message || 'Could not connect to Roblox Studio MCP.', true);
+  }
+}
+
+async function disconnectRobloxMcp() {
+  if (!window.confirm('Disconnect Roblox Studio MCP? Pending Studio approvals will be cancelled. An in-flight Studio tool may already have changed the place.')) return;
+  await runUiAction(() => window.arenaLocal.disconnectRobloxMcp(), 'Roblox Studio MCP disconnected.');
 }
 
 async function startTunnel() {
@@ -853,6 +969,8 @@ $('#saveNgrokTokenBtn').addEventListener('click', saveNgrokToken);
 $('#startTunnelBtn').addEventListener('click', startTunnel);
 $('#cancelTunnelBtn').addEventListener('click', cancelTunnelStart);
 $('#stopTunnelBtn').addEventListener('click', stopTunnel);
+els.connectRobloxMcpBtn.addEventListener('click', connectRobloxMcp);
+els.disconnectRobloxMcpBtn.addEventListener('click', disconnectRobloxMcp);
 $('#copyArenaPromptBtn').addEventListener('click', copyArenaInstructions);
 $('#copyUrlBtn').addEventListener('click', copyTunnelUrl);
 $('#rotatePairingBtn').addEventListener('click', rotatePairingKey);

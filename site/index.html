@@ -112,7 +112,7 @@
             <article class="feature-card">
               <span class="feature-icon icon-review" aria-hidden="true">✎</span>
               <h3>Review edits locally</h3>
-              <p>Ask mode shows file diffs and exact shell commands in the desktop approval queue before they run.</p>
+              <p>Ask mode shows file diffs, staged Git commit previews, exact shell commands, and mutating or unknown Studio tool calls in the desktop approval queue before they run.</p>
               <span class="feature-number">02 / REVIEW</span>
             </article>
             <article class="feature-card">
@@ -132,7 +132,7 @@
           <div class="step-grid">
             <article class="step-card"><span class="step-index">01</span><div><h3>Pick your folder</h3><p>Open Arena Local and select the project folder you want to work in.</p></div></article>
             <article class="step-card"><span class="step-index">02</span><div><h3>Connect to Arena</h3><p>Start the ngrok link, copy the setup prompt, and paste it into your Arena.ai conversation.</p></div></article>
-            <article class="step-card"><span class="step-index">03</span><div><h3>Work with control</h3><p>Arena uses its Bash tool to call the bridge. Reads run in scope; writes and commands follow your chosen permission mode.</p></div></article>
+            <article class="step-card"><span class="step-index">03</span><div><h3>Work with control</h3><p>Arena uses its Bash tool to call the authenticated bridge. File reads stay in scope; Git/process inspection, writes, staged commits, commands, and optional Roblox Studio MCP tools follow your permission mode.</p></div></article>
           </div>
         </section>
 
@@ -150,7 +150,7 @@
 
         <section class="safety-panel" aria-labelledby="safety-title">
           <div class="safety-symbol" aria-hidden="true">!</div>
-          <div class="safety-copy"><p class="eyebrow">PLEASE READ BEFORE CONNECTING</p><h2 id="safety-title">Shell access is powerful.</h2><p>Commands run as your normal operating-system user and can reach outside the selected folder. Ask is the default. Read only blocks writes and commands. <strong>No approval — VERY DANGEROUS</strong> skips per-action prompts and can cause data loss; enable it only if you understand the consequences.</p></div>
+          <div class="safety-copy"><p class="eyebrow">PLEASE READ BEFORE CONNECTING</p><h2 id="safety-title">Shell access is powerful.</h2><p>Commands run as your normal operating-system user and can reach outside the selected folder; connected Studio tools can modify open places or run Luau. Git commits change local history from staged files only and never push. Ask is the default. Read only blocks file writes, Git commits, commands, and mutating or unknown Studio tools. <strong>No approval — VERY DANGEROUS</strong> skips per-action prompts and can cause data loss or unintended game changes; enable it only if you understand the consequences.</p></div>
           <a class="safety-link" href="./safety.html">Read the safety notes <span aria-hidden="true">↗</span></a>
         </section>
 

@@ -7,6 +7,14 @@ import {
   executeReadTool,
   previewWorkspaceWrite,
 } from './workspace.mjs';
+import { isRobloxReadOnlyTool } from './roblox-mcp-client.mjs';
+import {
+  executeGitCommit,
+  executeLocalReadTool,
+  LOCAL_MUTATION_TOOLS,
+  LOCAL_READ_TOOLS,
+  prepareGitCommitPreview,
+} from './local-tools.mjs';
 
 const MAX_BODY_BYTES = 300_000;
 const MAX_ACTIVE_TASKS = 20;
@@ -14,7 +22,13 @@ const MAX_RETAINED_TASKS = 120;
 const TASK_TTL_MS = 30 * 60 * 1_000;
 const APPROVAL_TTL_MS = 10 * 60 * 1_000;
 const RATE_LIMIT_PER_MINUTE = 240;
-const ACTIONS = new Set(['list_files', 'read_file', 'search_text', 'write_file', 'run_command']);
+const MAX_ROBLOX_ARGS_BYTES = 256 * 1024;
+const MAX_ROBLOX_STUDIO_ID_LENGTH = 512;
+const ROBLOX_STUDIO_DISCOVERY_TOOL = 'list_roblox_studios';
+const ACTIONS = new Set([
+  'list_files', 'read_file', 'search_text', 'write_file', 'run_command', 'roblox_tool',
+  'git_status', 'git_diff', 'git_log', 'git_commit', 'list_processes',
+]);
 const REQUEST_ID_PATTERN = /^[a-zA-Z0-9._:-]{8,100}$/;
 
 class HttpError extends Error {
@@ -114,6 +128,42 @@ function validateTaskBody(body) {
       args = { command: boundedString(input.command, 'command', 2_000) };
       if (args.command.includes('\0')) throw new HttpError(400, 'command cannot contain null characters.');
       break;
+    case 'git_status':
+    case 'list_processes':
+      allowedKeys = [];
+      args = {};
+      break;
+    case 'git_diff':
+      allowedKeys = [];
+      args = {};
+      break;
+    case 'git_log':
+      allowedKeys = ['limit'];
+      if (input.limit !== undefined && (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 50)) {
+        throw new HttpError(400, 'limit must be an integer from 1 to 50.');
+      }
+      args = { limit: input.limit ?? 20 };
+      break;
+    case 'git_commit': {
+      allowedKeys = ['message'];
+      const message = boundedString(input.message, 'message', 500).trim();
+      if ([...message].some((character) => character.charCodeAt(0) < 32)) throw new HttpError(400, 'Git commit messages must fit on one line and cannot contain control characters.');
+      args = { message };
+      break;
+    }
+    case 'roblox_tool': {
+      allowedKeys = ['name', 'arguments'];
+      const name = boundedString(input.name, 'name', 128);
+      const toolArguments = input.arguments === undefined ? {} : input.arguments;
+      if (!toolArguments || typeof toolArguments !== 'object' || Array.isArray(toolArguments)) {
+        throw new HttpError(400, 'arguments must be a JSON object.');
+      }
+      if (Buffer.byteLength(JSON.stringify(toolArguments), 'utf8') > MAX_ROBLOX_ARGS_BYTES) {
+        throw new HttpError(413, 'Roblox Studio tool arguments are limited to 256 KB.');
+      }
+      args = { name, arguments: toolArguments };
+      break;
+    }
     default:
       throw new HttpError(400, 'Unsupported action.');
   }
@@ -129,6 +179,8 @@ function safeDesktopTask(task) {
     requestId: task.requestId,
     action: task.action,
     args,
+    robloxPermission: task.robloxPermission || null,
+    robloxToolDescription: task.robloxToolDescription || null,
     fullComputerAccess: task.fullComputerAccess === true,
     preview: task.status === 'awaiting_approval' ? task.preview : null,
     status: task.status,
@@ -150,6 +202,12 @@ function summarizeResult(action, result) {
   if (action === 'search_text') return `${result.matches?.length ?? 0} matches across ${result.filesScanned ?? 0} files.`;
   if (action === 'write_file') return `Wrote ${result.bytes ?? 0} bytes to ${result.path}.`;
   if (action === 'run_command') return `Command exited with ${result.exitCode ?? 'an error'}${result.timedOut ? ' (timed out)' : ''}.`;
+  if (action === 'git_status') return `${result.count ?? 0} safe change(s) on ${result.branch || 'the current branch'}${result.omittedProtectedCount ? ` · ${result.omittedProtectedCount} protected path(s) hidden` : ''}.`;
+  if (action === 'git_diff') return `${result.fileCount ?? 0} changed file(s) in the staged diff${result.omittedProtectedCount ? ` · ${result.omittedProtectedCount} protected path(s) hidden` : ''}${result.truncated ? ' · output truncated' : ''}.`;
+  if (action === 'git_log') return `${result.count ?? 0} recent commit(s).`;
+  if (action === 'git_commit') return `Created local commit ${result.commit || ''} from ${result.fileCount ?? 0} staged file(s).`;
+  if (action === 'list_processes') return `${result.processes?.length ?? 0} process(es) listed${result.truncated ? ' (truncated)' : ''}.`;
+  if (action === 'roblox_tool') return result.isError ? 'Roblox Studio MCP tool reported an error.' : 'Roblox Studio MCP tool completed.';
   return 'Complete.';
 }
 
@@ -176,16 +234,106 @@ function sortNewest(tasks) {
   return [...tasks].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissionMode, getFullComputerAccess = () => false, getFullComputerNoAskAuthorized = () => false, onUpdate = () => {} }) {
+function publicRobloxTool(tool) {
+  const normalized = {
+    name: tool.name,
+    description: tool.description || '',
+    inputSchema: tool.inputSchema || { type: 'object', properties: {} },
+    permission: isRobloxReadOnlyTool(tool.name) ? 'read-only' : 'approval',
+  };
+  if (tool.title) normalized.title = tool.title;
+  if (tool.annotations) normalized.annotations = tool.annotations;
+  return normalized;
+}
+
+function validateRobloxToolSchema(tool, args) {
+  const schema = tool.inputSchema;
+  if (Array.isArray(schema?.required)) {
+    for (const key of schema.required) {
+      if (typeof key === 'string' && !Object.prototype.hasOwnProperty.call(args, key)) {
+        throw new HttpError(400, `Roblox Studio tool “${tool.name}” requires arguments.${key} according to its input schema.`);
+      }
+    }
+  }
+  const properties = schema?.properties;
+  if (properties && typeof properties === 'object' && !Array.isArray(properties)) {
+    for (const [key, definition] of Object.entries(properties)) {
+      if (!Object.prototype.hasOwnProperty.call(args, key) || !definition || typeof definition !== 'object') continue;
+      const value = args[key];
+      const expectedTypes = Array.isArray(definition.type) ? definition.type : [definition.type];
+      const typeMatches = (type) => {
+        switch (type) {
+          case 'string': return typeof value === 'string';
+          case 'number': return typeof value === 'number' && Number.isFinite(value);
+          case 'integer': return typeof value === 'number' && Number.isInteger(value);
+          case 'boolean': return typeof value === 'boolean';
+          case 'array': return Array.isArray(value);
+          case 'object': return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+          case 'null': return value === null;
+          default: return true;
+        }
+      };
+      if (expectedTypes.some((type) => typeof type === 'string') && !expectedTypes.some(typeMatches)) {
+        throw new HttpError(400, `arguments.${key} must match the ${tool.name} input schema.`);
+      }
+      if (Array.isArray(definition.enum) && !definition.enum.some((candidate) => Object.is(candidate, value))) {
+        throw new HttpError(400, `arguments.${key} must be one of the values allowed by the ${tool.name} input schema.`);
+      }
+    }
+  }
+}
+
+function taskNeedsApproval(task) {
+  if (CHANGE_TOOLS.has(task.action) || LOCAL_MUTATION_TOOLS.has(task.action)) return true;
+  return task.action === 'roblox_tool' && task.robloxPermission !== 'read-only';
+}
+
+export function createRemoteApi({
+  getWorkspaceRoot,
+  getPairingToken,
+  getPermissionMode,
+  getFullComputerAccess = () => false,
+  getFullComputerNoAskAuthorized = () => false,
+  getRobloxMcpState = () => ({ status: 'disconnected', supported: false, toolCount: 0 }),
+  getRobloxMcpTools = () => [],
+  refreshRobloxMcpTools = async () => [],
+  callRobloxMcpTool = async () => { throw new Error('Roblox Studio MCP is not connected.'); },
+  onUpdate = () => {},
+}) {
   const tasks = new Map();
   const requestIndex = new Map();
   const approvedActions = new Map();
+  const approvedActionNames = new Map();
   let approvalEpoch = 0;
   let rateWindowStart = Date.now();
   let rateCount = 0;
 
   function changed() {
     try { onUpdate(); } catch { /* UI may not be ready during startup/shutdown. */ }
+  }
+
+  function currentRobloxMcpState() {
+    try { return getRobloxMcpState() || { status: 'disconnected' }; }
+    catch { return { status: 'error', error: 'Could not read Roblox Studio MCP status.' }; }
+  }
+
+  function currentRobloxTools() {
+    try {
+      const tools = getRobloxMcpTools();
+      return Array.isArray(tools) ? tools : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async function refreshRobloxTools() {
+    try { await refreshRobloxMcpTools(); }
+    catch (error) { throw new HttpError(503, `Could not refresh Roblox Studio tools: ${error.message || 'MCP connection failed.'}`); }
+    const state = currentRobloxMcpState();
+    if (state.status !== 'connected') {
+      throw new HttpError(503, state.error || 'Roblox Studio MCP is not connected. Connect it in the Arena Local desktop app first.');
+    }
+    return currentRobloxTools();
   }
 
   function trimTasks() {
@@ -220,15 +368,24 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
     changed();
   }
 
-  async function executeTask(task, expectedWriteState = null) {
+  async function executeTask(task, expectedWriteState = null, expectedGitCommitFingerprint = null) {
     try {
-      const root = getWorkspaceRoot();
-      const result = CHANGE_TOOLS.has(task.action)
-        ? await executeMutationTool(root, task.action, task.args, {
-          expectedWriteState,
-          fullComputerAccess: task.fullComputerAccess,
-        })
-        : await executeReadTool(root, task.action, task.args, { fullComputerAccess: task.fullComputerAccess });
+      let result;
+      if (task.action === 'roblox_tool') {
+        result = await callRobloxMcpTool(task.args.name, task.args.arguments);
+      } else if (task.action === 'git_commit') {
+        result = await executeGitCommit(getWorkspaceRoot(), task.args.message, expectedGitCommitFingerprint);
+      } else if (LOCAL_READ_TOOLS.has(task.action)) {
+        result = await executeLocalReadTool(getWorkspaceRoot(), task.action, task.args);
+      } else {
+        const root = getWorkspaceRoot();
+        result = CHANGE_TOOLS.has(task.action)
+          ? await executeMutationTool(root, task.action, task.args, {
+            expectedWriteState,
+            fullComputerAccess: task.fullComputerAccess,
+          })
+          : await executeReadTool(root, task.action, task.args, { fullComputerAccess: task.fullComputerAccess });
+      }
       const summary = summarizeResult(task.action, result);
       setStatus(task, 'completed', {
         result,
@@ -245,6 +402,18 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
   function clearApprovedActions() {
     approvalEpoch += 1;
     approvedActions.clear();
+    approvedActionNames.clear();
+  }
+
+  function clearApprovedRobloxActions() {
+    let cleared = false;
+    for (const [fingerprint, action] of approvedActionNames) {
+      if (action !== 'roblox_tool') continue;
+      approvedActions.delete(fingerprint);
+      approvedActionNames.delete(fingerprint);
+      cleared = true;
+    }
+    if (cleared) approvalEpoch += 1;
   }
 
   function clearApprovalTimeout(task) {
@@ -262,6 +431,9 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
     const task = tasks.get(taskId);
     if (!task || task.status !== 'awaiting_approval') throw new Error('This request is no longer waiting for approval.');
     if (!['approve', 'approve_session', 'deny'].includes(decision)) throw new Error('Choose approve, allow exact action for this session, or deny.');
+    if (task.action === 'git_commit' && decision === 'approve_session') {
+      throw new Error('Git commits must be approved one at a time because staged changes can change between requests.');
+    }
     clearApprovalTimeout(task);
     if (decision === 'deny') {
       denyTask(task, 'Denied by the user on this computer.');
@@ -276,12 +448,14 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
     const expectedWriteState = task.action === 'write_file' && task.preview
       ? { exists: task.preview.exists, before: task.preview.before }
       : null;
+    const expectedGitCommitFingerprint = task.action === 'git_commit' ? task.preview?.fingerprint || null : null;
     task.preview = null;
     setStatus(task, 'running', { message: undefined });
-    await executeTask(task, expectedWriteState);
+    await executeTask(task, expectedWriteState, expectedGitCommitFingerprint);
     if (rememberForSession && task.status === 'completed' && approvalEpoch === approvalEpochAtStart && getPermissionMode() === 'ask') {
       const trustedState = task.action === 'write_file' ? { exists: true, before: task.args.content } : null;
       approvedActions.set(task.fingerprint, trustedState);
+      approvedActionNames.set(task.fingerprint, task.action);
     }
     return safeDesktopTask(task);
   }
@@ -295,6 +469,34 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
       if (existing && existing.requestFingerprint !== requestFingerprint) throw new HttpError(409, 'requestId was already used for a different action.');
       if (existing) return existing;
     }
+
+    let robloxPermission = null;
+    let robloxToolDescription = null;
+    if (request.action === 'roblox_tool') {
+      await refreshRobloxTools();
+      const mcpState = currentRobloxMcpState();
+      if (mcpState.status !== 'connected') {
+        throw new HttpError(503, mcpState.error || 'Roblox Studio MCP is not connected. Connect it in the Arena Local desktop app first.');
+      }
+      const tool = currentRobloxTools().find((candidate) => candidate.name === request.args.name);
+      if (!tool) throw new HttpError(400, `Roblox Studio MCP tool “${request.args.name}” is not available. Check GET /v1/roblox/tools.`);
+      validateRobloxToolSchema(tool, request.args.arguments);
+      const schemaRequiresStudioId = Array.isArray(tool.inputSchema?.required)
+        && tool.inputSchema.required.includes('studio_id');
+      const hasStudioId = Object.prototype.hasOwnProperty.call(request.args.arguments, 'studio_id');
+      const requiresStudioId = tool.name !== ROBLOX_STUDIO_DISCOVERY_TOOL || schemaRequiresStudioId;
+      if (requiresStudioId || hasStudioId) {
+        boundedString(request.args.arguments.studio_id, 'arguments.studio_id', MAX_ROBLOX_STUDIO_ID_LENGTH);
+      }
+      if (tool.name === 'execute_luau') {
+        const datamodelType = boundedString(request.args.arguments.datamodel_type, 'arguments.datamodel_type', 32);
+        if (!['Edit', 'Client', 'Server'].includes(datamodelType)) {
+          throw new HttpError(400, 'arguments.datamodel_type must be Edit, Client, or Server for execute_luau.');
+        }
+      }
+      robloxPermission = isRobloxReadOnlyTool(tool.name) ? 'read-only' : 'approval';
+      robloxToolDescription = typeof tool.description === 'string' ? tool.description.slice(0, 10_000) : '';
+    }
     const activeCount = [...tasks.values()].filter((task) => ['running', 'preparing', 'awaiting_approval'].includes(task.status)).length;
     if (activeCount >= MAX_ACTIVE_TASKS) throw new HttpError(429, 'Too many active requests are waiting on this desktop.');
 
@@ -305,9 +507,11 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
       fingerprint: actionFingerprint(request.action, request.args),
       action: request.action,
       args: request.args,
+      robloxPermission,
+      robloxToolDescription,
       fullComputerAccess: Boolean(getFullComputerAccess()),
       fullComputerNoAskAuthorized: Boolean(getFullComputerNoAskAuthorized()),
-      status: CHANGE_TOOLS.has(request.action) ? 'preparing' : 'running',
+      status: taskNeedsApproval({ action: request.action, robloxPermission }) ? 'preparing' : 'running',
       result: null,
       resultSummary: '',
       autoApproved: false,
@@ -327,7 +531,7 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
       return task;
     }
 
-    if (!CHANGE_TOOLS.has(task.action)) {
+    if (!taskNeedsApproval(task)) {
       void executeTask(task);
       return task;
     }
@@ -346,7 +550,7 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
 
     const wasApprovedForSession = approvedActions.has(task.fingerprint);
     const approvedState = approvedActions.get(task.fingerprint);
-    if (wasApprovedForSession && task.action !== 'write_file') {
+    if (wasApprovedForSession && !['write_file', 'git_commit'].includes(task.action)) {
       setStatus(task, 'running', { message: undefined });
       void executeTask(task);
       return task;
@@ -370,6 +574,17 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
         return task;
       }
     }
+    if (task.action === 'git_commit') {
+      try {
+        const preview = await prepareGitCommitPreview(getWorkspaceRoot(), task.args.message);
+        if (task.status !== 'preparing') return task;
+        task.preview = preview;
+      } catch (error) {
+        if (task.status !== 'preparing') return task;
+        setStatus(task, 'error', { error: error.message || 'Could not prepare a safe Git commit preview.', resultSummary: error.message || 'Could not prepare a safe Git commit preview.' });
+        return task;
+      }
+    }
     if (task.status !== 'preparing') return task;
     setStatus(task, 'awaiting_approval', { message: 'Waiting for approval in the Arena Local desktop app.' });
     task.approvalTimeout = setTimeout(() => {
@@ -388,6 +603,16 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
     changed();
   }
 
+  function cancelPendingRobloxTasks(reason = 'Roblox Studio MCP disconnected.') {
+    for (const task of tasks.values()) {
+      if (task.action === 'roblox_tool' && (task.status === 'awaiting_approval' || task.status === 'preparing')) {
+        denyTask(task, reason, 'cancelled');
+      }
+    }
+    clearApprovedRobloxActions();
+    changed();
+  }
+
   function getDesktopTasks() {
     trimTasks();
     return sortNewest([...tasks.values()]).slice(0, 30).map(safeDesktopTask);
@@ -400,11 +625,40 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
     consumeRateLimit();
 
     if (req.method === 'GET' && url.pathname === '/v1/health') {
+      const robloxState = currentRobloxMcpState();
       return sendJson(res, 200, {
         ok: true,
         workspace: 'connected',
         permissionMode: getPermissionMode(),
         fullComputerAccess: Boolean(getFullComputerAccess()),
+        robloxMcp: {
+          connected: robloxState.status === 'connected',
+          status: robloxState.status,
+          toolCount: robloxState.toolCount || 0,
+        },
+      });
+    }
+    if (req.method === 'GET' && url.pathname === '/v1/roblox/tools') {
+      let state = currentRobloxMcpState();
+      if (state.status === 'connected') {
+        try { await refreshRobloxMcpTools(); }
+        catch {
+          state = currentRobloxMcpState();
+          return sendJson(res, 503, {
+            connected: false,
+            status: state.status,
+            error: 'Could not refresh Roblox Studio tools. Check the local Arena Local app for connection details.',
+            tools: [],
+          });
+        }
+        state = currentRobloxMcpState();
+      }
+      const tools = state.status === 'connected' ? currentRobloxTools().map(publicRobloxTool) : [];
+      return sendJson(res, 200, {
+        connected: state.status === 'connected',
+        status: state.status,
+        error: state.status === 'connected' ? undefined : 'Roblox Studio MCP is not connected. Check the local Arena Local app for connection details.',
+        tools,
       });
     }
     if (req.method === 'POST' && url.pathname === '/v1/tasks') {
@@ -434,6 +688,7 @@ export function createRemoteApi({ getWorkspaceRoot, getPairingToken, getPermissi
     getTasks: getDesktopTasks,
     approveTask,
     cancelPendingChanges,
+    cancelPendingRobloxTasks,
     clearApprovedActions,
   };
 }

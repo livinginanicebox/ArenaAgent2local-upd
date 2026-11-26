@@ -3,8 +3,16 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createRemoteApi } from '../src/remote-api.mjs';
 import { resolveWorkspaceRoot } from '../src/workspace.mjs';
+
+const execFileAsync = promisify(execFile);
+
+async function git(cwd, args) {
+  return execFileAsync('git', args, { cwd, encoding: 'utf8', windowsHide: true });
+}
 
 function listen(server) {
   return new Promise((resolve, reject) => {
@@ -26,12 +34,23 @@ async function makeFixture(t, initialMode = 'ask') {
   let mode = initialMode;
   let fullComputerAccess = false;
   let fullComputerNoAskAuthorized = false;
+  let robloxMcpStatus = 'disconnected';
+  let robloxMcpError = '';
+  let robloxTools = [];
+  const robloxCalls = [];
   const api = createRemoteApi({
     getWorkspaceRoot: () => workspaceRoot,
     getPairingToken: () => token,
     getPermissionMode: () => mode,
     getFullComputerAccess: () => fullComputerAccess,
     getFullComputerNoAskAuthorized: () => fullComputerNoAskAuthorized,
+    getRobloxMcpState: () => ({ status: robloxMcpStatus, error: robloxMcpError, toolCount: robloxTools.length }),
+    getRobloxMcpTools: () => robloxTools,
+    refreshRobloxMcpTools: async () => robloxTools,
+    callRobloxMcpTool: async (name, args) => {
+      robloxCalls.push({ name, args });
+      return { content: [{ type: 'text', text: `${name}:${JSON.stringify(args)}` }] };
+    },
   });
   const port = await listen(api.server);
   const base = `http://127.0.0.1:${port}`;
@@ -50,6 +69,8 @@ async function makeFixture(t, initialMode = 'ask') {
     setFullComputerAccess: (value) => { fullComputerAccess = value; },
     setFullComputerNoAskAuthorized: (value) => { fullComputerNoAskAuthorized = value; },
     setToken: (value) => { token = value; headers.authorization = `Bearer ${value}`; },
+    setRobloxMcp: (tools, status = 'connected', error = '') => { robloxTools = tools; robloxMcpStatus = status; robloxMcpError = error; },
+    robloxCalls,
   };
 }
 
@@ -376,4 +397,399 @@ test('invalid actions, traversal, and changed pairing tokens are rejected', asyn
   assert.equal(oldToken.status, 401);
   const newToken = await fetch(`${fixture.base}/v1/health`, { headers: { authorization: 'Bearer ' + 'C'.repeat(43) } });
   assert.equal(newToken.status, 200);
+});
+
+test('Git and process actions stay workspace-scoped and follow the existing permission modes', async (t) => {
+  const fixture = await makeFixture(t);
+  await git(fixture.workspaceRoot, ['init', '--quiet']);
+  await git(fixture.workspaceRoot, ['config', 'user.name', 'Arena Local Test']);
+  await git(fixture.workspaceRoot, ['config', 'user.email', 'arena-local-test@example.invalid']);
+  await git(fixture.workspaceRoot, ['add', 'README.md']);
+  await git(fixture.workspaceRoot, ['commit', '--quiet', '-m', 'initial commit']);
+
+  const invalidDiffArgs = await postTask(fixture, {
+    requestId: 'git-diff-args-bad', action: 'git_diff', args: { staged: false },
+  });
+  assert.equal(invalidDiffArgs.status, 400);
+  const invalidLogLimit = await postTask(fixture, {
+    requestId: 'git-limit-invalid', action: 'git_log', args: { limit: 51 },
+  });
+  assert.equal(invalidLogLimit.status, 400);
+  const invalidCommitMessage = await postTask(fixture, {
+    requestId: 'git-message-invalid', action: 'git_commit', args: { message: 'two\nlines' },
+  });
+  assert.equal(invalidCommitMessage.status, 400);
+
+  await fs.writeFile(path.join(fixture.workspaceRoot, 'README.md'), '# Local bridge test\nvisible staged edit\n');
+  await git(fixture.workspaceRoot, ['add', 'README.md']);
+  const statusRequest = await postTask(fixture, {
+    requestId: 'git-status-read-01', action: 'git_status', args: {},
+  });
+  const statusQueued = await statusRequest.json();
+  const statusCompleted = await waitForTask(fixture, statusQueued.taskId, (task) => task.status === 'completed');
+  assert.ok(statusCompleted.result.changes.some((change) => change.path === 'README.md'));
+
+  const diffRequest = await postTask(fixture, {
+    requestId: 'git-diff-read-01', action: 'git_diff', args: {},
+  });
+  const diffQueued = await diffRequest.json();
+  const diffCompleted = await waitForTask(fixture, diffQueued.taskId, (task) => task.status === 'completed');
+  assert.match(diffCompleted.result.diff, /visible staged edit/);
+
+  fixture.setMode('read-only');
+  const processRequest = await postTask(fixture, {
+    requestId: 'process-list-read', action: 'list_processes', args: {},
+  });
+  const processQueued = await processRequest.json();
+  const processCompleted = await waitForTask(fixture, processQueued.taskId, (task) => task.status === 'completed');
+  assert.ok(processCompleted.result.processes.length > 0);
+  assert.ok(processCompleted.result.processes.every((entry) => Object.keys(entry).sort().join(',') === 'name,pid'));
+
+  const blockedCommit = await postTask(fixture, {
+    requestId: 'git-commit-read-1', action: 'git_commit', args: { message: 'blocked commit' },
+  });
+  assert.equal((await blockedCommit.json()).status, 'denied');
+  assert.equal((await git(fixture.workspaceRoot, ['log', '-1', '--format=%s'])).stdout.trim(), 'initial commit');
+
+  fixture.setMode('ask');
+  const askCommit = await postTask(fixture, {
+    requestId: 'git-commit-ask-01', action: 'git_commit', args: { message: 'approved commit' },
+  });
+  const askQueued = await askCommit.json();
+  assert.equal(askQueued.status, 'awaiting_approval');
+  const approval = fixture.api.getTasks().find((task) => task.taskId === askQueued.taskId);
+  assert.equal(approval.preview.message, 'approved commit');
+  assert.match(approval.preview.diff, /visible staged edit/);
+  await assert.rejects(fixture.api.approveTask(askQueued.taskId, 'approve_session'), /one at a time/i);
+  await fixture.api.approveTask(askQueued.taskId, 'approve');
+  const askCompleted = await waitForTask(fixture, askQueued.taskId, (task) => task.status === 'completed');
+  assert.equal(askCompleted.result.message, 'approved commit');
+  assert.equal(askCompleted.result.hooksDisabled, true);
+
+  fixture.setMode('no-ask');
+  await fs.writeFile(path.join(fixture.workspaceRoot, 'README.md'), '# Local bridge test\nautomatic staged edit\n');
+  await git(fixture.workspaceRoot, ['add', 'README.md']);
+  const automaticCommit = await postTask(fixture, {
+    requestId: 'git-commit-auto-01', action: 'git_commit', args: { message: 'automatic commit' },
+  });
+  const automaticQueued = await automaticCommit.json();
+  assert.equal(automaticQueued.autoApproved, true);
+  const automaticCompleted = await waitForTask(fixture, automaticQueued.taskId, (task) => task.status === 'completed');
+  assert.equal(automaticCompleted.result.message, 'automatic commit');
+});
+
+test('Studio targeting and execute_luau requirements hold even when a tool schema omits them', async (t) => {
+  const fixture = await makeFixture(t);
+  fixture.setRobloxMcp([
+    {
+      name: 'execute_luau',
+      description: 'Run Luau.',
+      inputSchema: {
+        type: 'object',
+        properties: { studio_id: { type: 'string' }, code: { type: 'string' } },
+        required: ['studio_id', 'code'],
+      },
+    },
+    {
+      name: 'list_roblox_studios',
+      description: 'Discover or target Studio instances.',
+      inputSchema: { type: 'object', properties: { studio_id: { type: 'string' } }, required: ['studio_id'] },
+    },
+  ]);
+
+  const missingDatamodelType = await postTask(fixture, {
+    requestId: 'studio-schema-01',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: { studio_id: 'studio-1', code: 'print(1)' } },
+  });
+  assert.equal(missingDatamodelType.status, 400);
+  assert.match((await missingDatamodelType.json()).error, /datamodel_type/i);
+
+  const invalidDatamodelType = await postTask(fixture, {
+    requestId: 'studio-schema-02',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: { studio_id: 'studio-1', code: 'print(1)', datamodel_type: 'Unknown' } },
+  });
+  assert.equal(invalidDatamodelType.status, 400);
+  assert.match((await invalidDatamodelType.json()).error, /datamodel_type/i);
+
+  const schemaRequiredStudioId = await postTask(fixture, {
+    requestId: 'studio-schema-03',
+    action: 'roblox_tool',
+    args: { name: 'list_roblox_studios', arguments: {} },
+  });
+  assert.equal(schemaRequiredStudioId.status, 400);
+  const emptyDiscoveryStudioId = await postTask(fixture, {
+    requestId: 'studio-schema-04',
+    action: 'roblox_tool',
+    args: { name: 'list_roblox_studios', arguments: { studio_id: '  ' } },
+  });
+  assert.equal(emptyDiscoveryStudioId.status, 400);
+
+  const targetedDiscovery = await postTask(fixture, {
+    requestId: 'studio-schema-05',
+    action: 'roblox_tool',
+    args: { name: 'list_roblox_studios', arguments: { studio_id: 'studio-1' } },
+  });
+  assert.equal(targetedDiscovery.status, 202);
+  const queued = await targetedDiscovery.json();
+  await waitForTask(fixture, queued.taskId, (task) => task.status === 'completed');
+});
+
+test('Roblox Studio tools are discovered behind bearer auth and routed through the task API', async (t) => {
+  const fixture = await makeFixture(t);
+  const unauthorized = await fetch(`${fixture.base}/v1/roblox/tools`);
+  assert.equal(unauthorized.status, 401);
+
+  const disconnected = await fetch(`${fixture.base}/v1/roblox/tools`, { headers: fixture.headers });
+  assert.equal(disconnected.status, 200);
+  assert.equal((await disconnected.json()).connected, false);
+  const disconnectedCall = await postTask(fixture, {
+    requestId: 'studio-offline-01',
+    action: 'roblox_tool',
+    args: { name: 'script_read', arguments: { studio_id: 'studio-1', script_path: 'game.ServerScriptService.Main' } },
+  });
+  assert.equal(disconnectedCall.status, 503);
+
+  fixture.setRobloxMcp([], 'error', 'Roblox Studio MCP was not found at /Users/private/Roblox/mcp.bat.');
+  const failedConnection = await fetch(`${fixture.base}/v1/roblox/tools`, { headers: fixture.headers });
+  assert.equal(failedConnection.status, 200);
+  const failedConnectionState = await failedConnection.json();
+  assert.match(failedConnectionState.error, /check the local Arena Local app/i);
+  assert.doesNotMatch(JSON.stringify(failedConnectionState), /\/Users\/private/);
+
+  fixture.setRobloxMcp([
+    {
+      name: 'script_read',
+      description: 'Read a script.',
+      inputSchema: {
+        type: 'object',
+        properties: { studio_id: { type: 'string' }, script_path: { type: 'string' } },
+        required: ['studio_id', 'script_path'],
+      },
+      annotations: { readOnlyHint: true },
+    },
+    {
+      name: 'execute_luau',
+      description: 'Run Luau in Studio.',
+      inputSchema: {
+        type: 'object',
+        properties: { studio_id: { type: 'string' }, code: { type: 'string' }, datamodel_type: { type: 'string', enum: ['Edit', 'Client', 'Server'] } },
+        required: ['studio_id', 'code', 'datamodel_type'],
+      },
+      annotations: { readOnlyHint: true },
+    },
+    {
+      name: 'list_roblox_studios',
+      description: 'List connected Studio instances.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'new_unknown_tool',
+      description: 'Unknown future tool.',
+      inputSchema: { type: 'object', properties: { studio_id: { type: 'string' } }, required: ['studio_id'] },
+      annotations: { readOnlyHint: true },
+    },
+  ]);
+  const authorized = await fetch(`${fixture.base}/v1/roblox/tools`, { headers: fixture.headers });
+  assert.equal(authorized.status, 200);
+  const toolList = await authorized.json();
+  assert.equal(toolList.connected, true);
+  const health = await fetch(`${fixture.base}/v1/health`, { headers: fixture.headers });
+  const healthState = await health.json();
+  assert.deepEqual(healthState.robloxMcp, { connected: true, status: 'connected', toolCount: 4 });
+  assert.equal(toolList.tools.find((tool) => tool.name === 'script_read').permission, 'read-only');
+  assert.equal(toolList.tools.find((tool) => tool.name === 'execute_luau').permission, 'approval', 'MCP annotations do not override Arena Local permission policy');
+  assert.equal(toolList.tools.find((tool) => tool.name === 'list_roblox_studios').permission, 'read-only');
+
+  const missingStudioId = await postTask(fixture, {
+    requestId: 'studio-no-id-0001',
+    action: 'roblox_tool',
+    args: { name: 'script_read', arguments: { script_path: 'game.ServerScriptService.Main' } },
+  });
+  assert.equal(missingStudioId.status, 400);
+  assert.match((await missingStudioId.json()).error, /studio_id/i);
+  const missingSchemaArgument = await postTask(fixture, {
+    requestId: 'studio-no-datamodel',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: { studio_id: 'studio-1', code: 'print(1)' } },
+  });
+  assert.equal(missingSchemaArgument.status, 400);
+  assert.match((await missingSchemaArgument.json()).error, /datamodel_type/i);
+  const invalidSchemaType = await postTask(fixture, {
+    requestId: 'studio-bad-type-01',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: { studio_id: 4, code: 'print(1)', datamodel_type: 'Edit' } },
+  });
+  assert.equal(invalidSchemaType.status, 400);
+  const emptyStudioId = await postTask(fixture, {
+    requestId: 'studio-empty-id-01',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: { studio_id: '   ', code: 'print(1)', datamodel_type: 'Edit' } },
+  });
+  assert.equal(emptyStudioId.status, 400);
+  const malformedToolArguments = await postTask(fixture, {
+    requestId: 'studio-bad-args-01',
+    action: 'roblox_tool',
+    args: { name: 'script_read', arguments: [] },
+  });
+  assert.equal(malformedToolArguments.status, 400);
+  const oversizedToolArguments = await postTask(fixture, {
+    requestId: 'studio-large-args1',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: { studio_id: 'studio-1', code: 'x'.repeat(256 * 1024) } },
+  });
+  assert.equal(oversizedToolArguments.status, 413);
+
+  const discovery = await postTask(fixture, {
+    requestId: 'studio-discover-01',
+    action: 'roblox_tool',
+    args: { name: 'list_roblox_studios', arguments: {} },
+  });
+  assert.equal(discovery.status, 202, 'the discovery tool can be called before an instance ID is known');
+  const discoveryTask = await discovery.json();
+  await waitForTask(fixture, discoveryTask.taskId, (task) => task.status === 'completed');
+
+  const readRequest = {
+    requestId: 'studio-read-0001',
+    action: 'roblox_tool',
+    args: { name: 'script_read', arguments: { studio_id: 'studio-1', script_path: 'game.ServerScriptService.Main' } },
+  };
+  const readSubmitted = await postTask(fixture, readRequest);
+  assert.equal(readSubmitted.status, 202);
+  const readQueued = await readSubmitted.json();
+  const readCompleted = await waitForTask(fixture, readQueued.taskId, (task) => task.status === 'completed');
+  assert.equal(readCompleted.result.content[0].text, `script_read:${JSON.stringify(readRequest.args.arguments)}`);
+  assert.equal(fixture.robloxCalls.length, 2);
+
+  const luauRequest = {
+    requestId: 'studio-luau-0001',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: { studio_id: 'studio-1', code: 'print("approved")', datamodel_type: 'Edit' } },
+  };
+  const luauSubmitted = await postTask(fixture, luauRequest);
+  assert.equal(luauSubmitted.status, 202);
+  const luauQueued = await luauSubmitted.json();
+  assert.equal(luauQueued.status, 'awaiting_approval');
+  const approval = fixture.api.getTasks().find((task) => task.taskId === luauQueued.taskId);
+  assert.equal(approval.robloxPermission, 'approval');
+  assert.equal(approval.robloxToolDescription, 'Run Luau in Studio.');
+  assert.deepEqual(approval.args, luauRequest.args);
+  await fixture.api.approveTask(luauQueued.taskId, 'approve');
+  const luauCompleted = await waitForTask(fixture, luauQueued.taskId, (task) => task.status === 'completed');
+  assert.equal(luauCompleted.result.content[0].text, `execute_luau:${JSON.stringify(luauRequest.args.arguments)}`);
+  assert.equal(fixture.robloxCalls.length, 3);
+
+  const unknownTool = await postTask(fixture, {
+    requestId: 'studio-unknown-001',
+    action: 'roblox_tool',
+    args: { name: 'new_unknown_tool', arguments: { studio_id: 'studio-1' } },
+  });
+  assert.equal((await unknownTool.json()).status, 'awaiting_approval', 'unknown tools require approval even if they self-label read-only');
+});
+
+test('Read only blocks mutating Studio tools while No-Ask remains an explicit opt-in', async (t) => {
+  const fixture = await makeFixture(t);
+  fixture.setRobloxMcp([
+    {
+      name: 'script_read',
+      description: 'Read script.',
+      inputSchema: { type: 'object', properties: { studio_id: { type: 'string' } }, required: ['studio_id'] },
+    },
+    {
+      name: 'execute_luau',
+      description: 'Run Luau.',
+      inputSchema: {
+        type: 'object',
+        properties: { studio_id: { type: 'string' }, code: { type: 'string' }, datamodel_type: { type: 'string' } },
+        required: ['studio_id', 'code', 'datamodel_type'],
+      },
+    },
+  ]);
+
+  fixture.setMode('read-only');
+  const blocked = await postTask(fixture, {
+    requestId: 'studio-readonly-01',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: { studio_id: 'studio-1', code: 'game.Workspace.Name = "changed"', datamodel_type: 'Edit' } },
+  });
+  assert.equal((await blocked.json()).status, 'denied');
+  assert.equal(fixture.robloxCalls.length, 0);
+
+  const allowedRead = await postTask(fixture, {
+    requestId: 'studio-readonly-02',
+    action: 'roblox_tool',
+    args: { name: 'script_read', arguments: { studio_id: 'studio-1', script_path: 'game.ServerScriptService.Main' } },
+  });
+  const readQueued = await allowedRead.json();
+  await waitForTask(fixture, readQueued.taskId, (task) => task.status === 'completed');
+  assert.equal(fixture.robloxCalls.length, 1);
+
+  fixture.setMode('no-ask');
+  const auto = await postTask(fixture, {
+    requestId: 'studio-noask-01',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: { studio_id: 'studio-1', code: 'print("automatic")', datamodel_type: 'Edit' } },
+  });
+  const autoQueued = await auto.json();
+  assert.equal(autoQueued.autoApproved, true);
+  const completed = await waitForTask(fixture, autoQueued.taskId, (task) => task.status === 'completed');
+  assert.equal(completed.autoApproved, true);
+  assert.equal(fixture.robloxCalls.length, 2);
+});
+
+test('Roblox Studio disconnection cancels pending approvals and clears exact-session approvals', async (t) => {
+  const fixture = await makeFixture(t);
+  const tools = [{
+    name: 'execute_luau',
+    description: 'Run Luau in Studio.',
+    inputSchema: {
+      type: 'object',
+      properties: { studio_id: { type: 'string' }, code: { type: 'string' }, datamodel_type: { type: 'string' } },
+      required: ['studio_id', 'code', 'datamodel_type'],
+    },
+  }];
+  fixture.setRobloxMcp(tools);
+
+  const arguments_ = { studio_id: 'studio-1', code: 'print("exact")', datamodel_type: 'Edit' };
+  const pendingResponse = await postTask(fixture, {
+    requestId: 'studio-disconnect-01',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: arguments_ },
+  });
+  const pending = await pendingResponse.json();
+  assert.equal(pending.status, 'awaiting_approval');
+  fixture.api.cancelPendingRobloxTasks('Studio disconnected.');
+  assert.equal(fixture.api.getTasks().find((task) => task.taskId === pending.taskId).status, 'cancelled');
+  assert.equal(fixture.robloxCalls.length, 0);
+  await assert.rejects(fixture.api.approveTask(pending.taskId, 'approve'), /no longer waiting/i);
+
+  const approvedResponse = await postTask(fixture, {
+    requestId: 'studio-session-01',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: arguments_ },
+  });
+  const approved = await approvedResponse.json();
+  await fixture.api.approveTask(approved.taskId, 'approve_session');
+  assert.equal(fixture.api.getTasks().find((task) => task.taskId === approved.taskId).status, 'completed');
+
+  const reusedResponse = await postTask(fixture, {
+    requestId: 'studio-session-02',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: arguments_ },
+  });
+  const reused = await reusedResponse.json();
+  assert.notEqual(reused.status, 'awaiting_approval', 'an exact session approval applies only while the Studio connection is active');
+  await waitForTask(fixture, reused.taskId, (task) => task.status === 'completed');
+  assert.equal(fixture.robloxCalls.length, 2);
+
+  fixture.api.cancelPendingRobloxTasks('Studio disconnected.');
+  fixture.setRobloxMcp(tools, 'disconnected');
+  fixture.setRobloxMcp(tools, 'connected');
+  const afterReconnect = await postTask(fixture, {
+    requestId: 'studio-session-03',
+    action: 'roblox_tool',
+    args: { name: 'execute_luau', arguments: arguments_ },
+  });
+  assert.equal((await afterReconnect.json()).status, 'awaiting_approval', 'reconnecting does not restore a previous exact-session approval');
 });

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#102a66">
-  <meta name="description" content="Set up Arena Local, connect Arena.ai Bash through ngrok HTTPS, and keep file changes behind local approval.">
+  <meta name="description" content="Set up Arena Local, connect Arena.ai Bash through ngrok HTTPS, and optionally use Roblox Studio MCP with local approval.">
   <meta property="og:title" content="Getting started — Arena Local">
   <meta property="og:description" content="A step-by-step setup guide for Arena Local on Windows.">
   <title>Get started // Arena Local</title>
@@ -40,12 +40,16 @@
             <li><span class="timeline-number">03</span><div><p class="card-kicker">CREDENTIAL</p><h3>Save your ngrok authtoken</h3><p>Paste the authtoken from your ngrok account into Arena Local. When OS secure storage is available, the app encrypts the saved token with Electron safeStorage; otherwise it stays in memory until the app closes. This token is separate from the pairing key and is never included in the Arena prompt.</p></div></li>
             <li><span class="timeline-number">04</span><div><p class="card-kicker">CONNECT</p><h3>Start the remote connection</h3><p>Arena Local starts a temporary HTTPS tunnel to its loopback task API. The desktop interface remains local. A connection attempt can be cancelled; stopping the link revokes the URL and cancels pending approvals.</p></div></li>
             <li><span class="timeline-number">05</span><div><p class="card-kicker">PAIR</p><h3>Copy the setup prompt into Arena.ai</h3><p>Click <strong>Copy Arena setup prompt</strong>, then paste it into the Arena.ai conversation. The prompt includes the live URL and bearer key and tells Arena's Bash tool to fetch the public <a href="./agents.md">agent guide</a> before making bridge requests. Keep the copied prompt private.</p></div></li>
-            <li><span class="timeline-number">06</span><div><p class="card-kicker">WORK</p><h3>Request a focused task</h3><p>Start with a narrow file listing or relevant read. Review every proposed diff and shell command in the local approval queue. Wait for the desktop decision instead of retrying or routing around it.</p></div></li>
+            <li><span class="timeline-number">06</span><div><p class="card-kicker">WORK</p><h3>Request a focused task</h3><p>Start with a narrow file listing or relevant read. Review every proposed file or staged Git diff, commit message, shell command, or changing/unknown Roblox Studio call in the local approval queue. Request `git_commit` only when you explicitly want a local commit; it never pushes. Wait for the desktop decision instead of retrying or routing around it.</p></div></li>
           </ol>
         </section>
 
+        <section class="page-section page-callout page-callout-blue" aria-labelledby="studio-mcp-title">
+          <span class="callout-mark" aria-hidden="true">⌘</span><div><p class="eyebrow">OPTIONAL · ROBLOX STUDIO MCP CLIENT</p><h2 id="studio-mcp-title">Connect the Studio you intend to use.</h2><p>In the latest Roblox Studio, open <strong>Assistant → … → Manage MCP Servers</strong> and enable <strong>Studio as MCP server</strong>. In Arena Local, choose <strong>Connect Roblox Studio</strong> and review the native warning. Arena Local launches the built-in server over local stdio, then forwards tool requests through the authenticated bridge. Use <code>list_roblox_studios</code> to choose the intended instance; Studio-targeted calls include its <code>studio_id</code>. Studio tools can inspect or change open places and return their data to Arena. Ask mode gates mutating or unknown tools; Read only blocks them; No-Ask can execute them without per-action approval.</p></div><a class="quiet-link" href="./safety.html">Read Studio safety notes →</a>
+        </section>
+
         <section class="page-section page-callout page-callout-blue" aria-labelledby="prompt-title">
-          <span class="callout-mark" aria-hidden="true">⌘</span><div><p class="eyebrow">WHERE THE CHAT HAPPENS</p><h2 id="prompt-title">Prompt on Arena.ai. Control on your PC.</h2><p>Arena Local does not embed Arena's interface. Arena's Bash tool sends authenticated requests over HTTPS; your local app enforces the permission mode and runs allowed file tools.</p></div><a class="quiet-link" href="./features.html">See how the bridge works →</a>
+          <span class="callout-mark" aria-hidden="true">⌘</span><div><p class="eyebrow">WHERE THE CHAT HAPPENS</p><h2 id="prompt-title">Prompt on Arena.ai. Control on your PC.</h2><p>Arena Local does not embed Arena's interface. Arena's Bash tool sends authenticated requests over HTTPS; your local app enforces the permission mode and runs allowed file, Git/process, or connected Roblox Studio tools.</p></div><a class="quiet-link" href="./features.html">See how the bridge works →</a>
         </section>
 
         <section class="page-section" aria-labelledby="end-title">
@@ -53,7 +57,7 @@
           <div class="page-grid page-grid-two"><article class="info-card"><p class="card-kicker">REVOKE ACCESS</p><h3>Stop or rotate</h3><p>Stopping the tunnel or rotating the pairing key revokes the current instructions. Pending approvals are cancelled; an action already approved and running is not undone or interrupted.</p></article><article class="info-card"><p class="card-kicker">NEED A HAND?</p><h3>Check the guide and FAQ</h3><p>Read the <a href="./agents.md">agent guide</a> for the API workflow, or open the <a href="./faq.html">FAQ</a> for setup and troubleshooting answers.</p></article></div>
         </section>
 
-        <section class="page-cta"><div><p class="eyebrow">DEFAULT TO REVIEW</p><h2>Start with Ask mode.</h2><p>Read the safety model before changing permission settings. No approval — VERY DANGEROUS can run shell commands without a per-action prompt.</p></div><a class="page-button page-button-danger" href="./safety.html">Read safety notes <span aria-hidden="true">→</span></a></section>
+        <section class="page-cta"><div><p class="eyebrow">DEFAULT TO REVIEW</p><h2>Start with Ask mode.</h2><p>Read the safety model before changing permission settings. No approval — VERY DANGEROUS can run shell commands and staged Git commits without a per-action prompt.</p></div><a class="page-button page-button-danger" href="./safety.html">Read safety notes <span aria-hidden="true">→</span></a></section>
       </main>
       <footer class="site-footer page-footer"><a class="footer-brand" href="./">ARENA<span>LOCAL</span></a><p>Made for local work. Keep the pairing key private.</p><div><a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html">FAQ</a><a href="./agents.md">Agent guide</a><a href="./download.html">Download</a><a href="https://github.com/lumifaye/ArenaAgent2local" target="_blank" rel="noopener noreferrer">Source</a></div><small>© <span id="year">2026</span> Arena Local · An early prototype</small></footer>
     </div>

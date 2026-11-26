@@ -329,3 +329,44 @@ body::before {
   .hero-copy h2 { font-size: 26px; }
   .link-actions { align-items: flex-start; flex-direction: column; }
 }
+
+.roblox-mcp-card { display: grid; gap: 12px; padding: 19px 21px; border-color: rgba(105, 195, 240, .25); background: linear-gradient(145deg, rgba(18, 41, 71, .91), rgba(8, 20, 39, .98)); }
+.roblox-mcp-card .card-heading { margin: 0; }
+.roblox-mcp-card .card-heading h2 { margin: 4px 0 0; color: #e7f3ff; font-size: 16px; }
+.roblox-mcp-card .step-mark { color: #9bb0c6; }
+.roblox-mcp-intro, .roblox-mcp-setup { margin: 0; color: #b1c5d8; font-size: 10px; line-height: 1.6; }
+.roblox-mcp-status { display: flex; align-items: center; gap: 9px; min-height: 37px; padding: 8px 11px; border: 1px solid rgba(120, 176, 218, .2); border-radius: 4px; color: #c6d7e7; background: rgba(5, 17, 34, .58); font-size: 10px; }
+.roblox-mcp-status-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #70849b; box-shadow: 0 0 0 3px rgba(112, 132, 155, .13); }
+.roblox-mcp-status[data-state="connecting"], .roblox-mcp-status[data-state="disconnecting"] { color: #ffe1a0; }
+.roblox-mcp-status[data-state="connecting"] .roblox-mcp-status-dot { background: #ffcd68; box-shadow: 0 0 0 3px rgba(255, 205, 104, .15); animation: mcp-pulse 1.1s ease-in-out infinite; }
+.roblox-mcp-status[data-state="connected"] { color: #a7f0d1; border-color: rgba(106, 230, 177, .3); }
+.roblox-mcp-status[data-state="connected"] .roblox-mcp-status-dot { background: #73e6b2; box-shadow: 0 0 0 3px rgba(115, 230, 178, .15); }
+.roblox-mcp-status[data-state="error"], .roblox-mcp-status[data-state="unsupported"] { color: #ffc3c7; border-color: rgba(255, 126, 136, .3); }
+.roblox-mcp-status[data-state="error"] .roblox-mcp-status-dot, .roblox-mcp-status[data-state="unsupported"] .roblox-mcp-status-dot { background: #ff858e; box-shadow: 0 0 0 3px rgba(255, 133, 142, .14); }
+.roblox-mcp-error { margin: -4px 0 0; color: #ffb4bc; font-size: 9px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.roblox-mcp-actions { display: flex; align-items: center; gap: 8px; }
+.roblox-mcp-actions .primary-button, .roblox-mcp-actions .secondary-button { min-height: 34px; padding: 0 14px; border-radius: 3px; font-size: 9px; }
+.roblox-mcp-tools { border: 1px solid rgba(121, 180, 221, .18); border-radius: 3px; color: #b8cbde; background: rgba(3, 14, 30, .4); }
+.roblox-mcp-tools summary { padding: 9px 11px; color: #a7dfff; cursor: pointer; font-size: 9px; }
+.roblox-mcp-tools ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; max-height: 220px; margin: 0; padding: 0 12px 11px 27px; overflow: auto; }
+.roblox-mcp-tools li { color: #d2e1ef; font-size: 8px; overflow-wrap: anywhere; }
+.roblox-mcp-tools li small { display: block; color: #89a2ba; font-size: 7px; line-height: 1.4; }
+.roblox-mcp-safety { margin: 0; padding: 9px 11px; border-left: 2px solid #e3b45b; color: #e3cf9d; background: rgba(105, 75, 25, .12); font-size: 9px; line-height: 1.55; }
+.roblox-mcp-setup { color: #8fa9c2; font-size: 8px; }
+.roblox-mcp-setup strong { color: #bbd6ed; }
+.remote-approval-card[data-action="roblox_tool"] { border-color: rgba(130, 179, 255, .42); background: linear-gradient(145deg, rgba(38, 46, 76, .52), rgba(13, 25, 47, .98) 52%); }
+.roblox-tool-arguments, .git-commit-diff, .git-commit-files, .git-commit-message { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.git-commit-diff { max-height: 440px; color: #cde0f4; }
+.git-commit-message { color: #ffe5a8; }
+.roblox-tool-description { margin: 10px 0; border: 1px solid rgba(126, 154, 227, .18); border-radius: 3px; color: #aab9d7; background: rgba(47, 56, 93, .14); }
+.roblox-tool-description summary { padding: 8px 10px; color: #bbcbeb; cursor: pointer; font-size: 9px; }
+.roblox-tool-description p { max-height: 120px; margin: 0; padding: 0 10px 10px; overflow: auto; font-size: 9px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.activity-action-icon.roblox { color: #a9baff; background: rgba(108, 117, 226, .19); }
+@keyframes mcp-pulse { 50% { opacity: .5; box-shadow: 0 0 0 6px rgba(255, 205, 104, .06); } }
+
+@media (max-width: 680px) {
+  .roblox-mcp-card { padding: 15px 13px; }
+  .roblox-mcp-card .card-heading h2 { font-size: 13px; }
+  .roblox-mcp-actions { flex-wrap: wrap; }
+  .roblox-mcp-tools ul { grid-template-columns: 1fr; }
+}

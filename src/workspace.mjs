@@ -62,6 +62,11 @@ function assertSafeSegments(relativePath) {
   if (segments.some(isSensitiveName)) throw new Error('This file is protected because it may contain credentials.');
 }
 
+export function isProtectedWorkspacePath(relativePath) {
+  try { assertSafeSegments(relativePath); return false; }
+  catch { return true; }
+}
+
 async function lstatWorkspacePath(root, target, allowMissingFinal) {
   const relative = path.relative(root, target);
   const segments = relative ? relative.split(path.sep).filter(Boolean) : [];
