@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#102a66">
-  <meta name="description" content="Arena Local v0.1.4 adds Roblox Studio MCP support and safe local Git and process tools.">
+  <meta name="description" content="Arena Local v0.1.5 adds a Git and GitHub repository workbench, secure token handling, and repository-specific agent instructions.">
   <meta property="og:title" content="Updates — Arena Local">
-  <meta property="og:description" content="See what's new in Arena Local v0.1.4: Roblox Studio MCP integration and workspace-scoped Git and process tools.">
+  <meta property="og:description" content="See what's new in Arena Local v0.1.5: a local Git and GitHub repository workbench and secure repository guidance.">
   <title>Updates // Arena Local</title>
   <link rel="canonical" href="https://lumifaye.github.io/ArenaAgent2local/changelog.html">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
@@ -28,8 +28,15 @@
       <main id="main" class="subpage-main">
         <p class="breadcrumb"><a href="./">Home</a><span aria-hidden="true">/</span> Updates</p>
         <section class="page-hero page-hero-compact" aria-labelledby="page-title">
-          <div><p class="eyebrow">RELEASE NOTES / NOVEMBER 25, 2026</p><h1 id="page-title">Studio connects.<br><span>Local tools grow.</span></h1><p>Version 0.1.4 adds an authenticated Roblox Studio MCP client alongside workspace-scoped Git inspection, staged commits with local approval, and private-by-default process listing.</p><div class="hero-inline-links"><a class="page-button page-button-primary" href="./download.html">Get v0.1.4 <span aria-hidden="true">↓</span></a><a class="quiet-link" href="https://github.com/lumifaye/ArenaAgent2local/releases/tag/v0.1.4" target="_blank" rel="noopener noreferrer">Open the release ↗</a></div></div>
-          <div class="release-badge"><span>ARENA LOCAL</span><strong>0.1.4</strong><small>DESKTOP UPDATE<br>WINDOWS X64</small></div>
+          <div><p class="eyebrow">RELEASE NOTES / NOVEMBER 25, 2026</p><h1 id="page-title">Local Git.<br><span>More control.</span></h1><p>Version 0.1.5 adds a local Git and GitHub repository workbench, secure read-only repository lookup, and bounded repository-specific agent instructions.</p><div class="hero-inline-links"><a class="page-button page-button-primary" href="./download.html">Get v0.1.5 <span aria-hidden="true">↓</span></a><a class="quiet-link" href="https://github.com/lumifaye/ArenaAgent2local/releases/tag/v0.1.5" target="_blank" rel="noopener noreferrer">Open the release ↗</a></div></div>
+          <div class="release-badge"><span>ARENA LOCAL</span><strong>0.1.5</strong><small>DESKTOP UPDATE<br>WINDOWS X64</small></div>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.5 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.5</span><small>NOV 25, 2026</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-added">ADDED</span><ul><li>Add a local Git workbench for repository initialization, status, selected-file staging and unstaging, history, staged-diff review, and confirmed local commits.</li><li>Configure repository-local author identity and HTTPS remotes; GitHub account and repository lookup uses a token held by the desktop process and never writes credentials to Git configuration or remote URLs.</li><li>Add a bounded editor for repository-root <code>ARENA.md</code> instructions, treated as untrusted project context.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">HARDENED</span><ul><li>Keep Git operations workspace-root scoped, protect credential paths, suppress configured content filters during status and local staging/commits, and require a complete staged-diff preview plus local approval before commits.</li><li>Never push automatically; commits stay local, with hooks and signing disabled. GitHub lookup is read-only and tokens use OS secure storage when available.</li></ul></div>
+          </div></article>
         </section>
 
         <section class="page-section" aria-label="Version 0.1.4 release notes">

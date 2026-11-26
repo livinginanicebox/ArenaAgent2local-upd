@@ -5,6 +5,7 @@ let currentFileEntries = [];
 let currentFileTruncated = false;
 let toastTimer = null;
 let lastCompletedWrites = '';
+let lastCompletedGitMutations = '';
 let combinedUnlockChallengeId = '';
 let combinedUnlockReadyAt = 0;
 let combinedUnlockExpiresAt = 0;
@@ -14,6 +15,11 @@ let combinedUnlockPairingHint = '';
 let combinedUnlockTimer = null;
 let combinedUnlockSliderUnlocked = false;
 let combinedUnlockStarting = false;
+let gitDashboard = null;
+let githubRepositories = [];
+let selectedGitPaths = new Set();
+let gitCommitPreview = null;
+let gitLoadSequence = 0;
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -73,6 +79,55 @@ const els = {
   robloxMcpToolsList: $('#robloxMcpToolsList'),
   connectRobloxMcpBtn: $('#connectRobloxMcpBtn'),
   disconnectRobloxMcpBtn: $('#disconnectRobloxMcpBtn'),
+  refreshGitBtn: $('#refreshGitBtn'),
+  gitStatusBadge: $('#gitStatusBadge'),
+  gitBranchName: $('#gitBranchName'),
+  gitSummaryText: $('#gitSummaryText'),
+  gitCounts: $('#gitCounts'),
+  gitStagedCount: $('#gitStagedCount'),
+  gitUnstagedCount: $('#gitUnstagedCount'),
+  gitUnavailable: $('#gitUnavailable'),
+  gitUnavailableText: $('#gitUnavailableText'),
+  initializeGitBtn: $('#initializeGitBtn'),
+  gitRepositoryContent: $('#gitRepositoryContent'),
+  gitChangeList: $('#gitChangeList'),
+  gitSelectionHint: $('#gitSelectionHint'),
+  gitStageSelectedBtn: $('#gitStageSelectedBtn'),
+  gitUnstageSelectedBtn: $('#gitUnstageSelectedBtn'),
+  gitStagedDiff: $('#gitStagedDiff'),
+  gitDiffSummary: $('#gitDiffSummary'),
+  copyGitDiffBtn: $('#copyGitDiffBtn'),
+  gitCommitMessage: $('#gitCommitMessage'),
+  gitPreviewCommitBtn: $('#gitPreviewCommitBtn'),
+  gitHistory: $('#gitHistory'),
+  gitHistorySummary: $('#gitHistorySummary'),
+  gitUserName: $('#gitUserName'),
+  gitUserEmail: $('#gitUserEmail'),
+  saveGitIdentityBtn: $('#saveGitIdentityBtn'),
+  gitRemoteName: $('#gitRemoteName'),
+  gitRemoteUrl: $('#gitRemoteUrl'),
+  saveGitRemoteBtn: $('#saveGitRemoteBtn'),
+  gitConfigSummary: $('#gitConfigSummary'),
+  githubTokenInput: $('#githubTokenInput'),
+  saveGithubTokenBtn: $('#saveGithubTokenBtn'),
+  githubTokenStatus: $('#githubTokenStatus'),
+  forgetGithubTokenBtn: $('#forgetGithubTokenBtn'),
+  githubRepositorySelect: $('#githubRepositorySelect'),
+  loadGithubReposBtn: $('#loadGithubReposBtn'),
+  setGithubOriginBtn: $('#setGithubOriginBtn'),
+  githubRepositoryStatus: $('#githubRepositoryStatus'),
+  repositoryInstructionsInput: $('#repositoryInstructionsInput'),
+  saveRepositoryInstructionsBtn: $('#saveRepositoryInstructionsBtn'),
+  gitInstructionsSummary: $('#gitInstructionsSummary'),
+  gitInstructionsNotice: $('#gitInstructionsNotice'),
+  gitInstructionsBytes: $('#gitInstructionsBytes'),
+  gitCommitPreviewDialog: $('#gitCommitPreviewDialog'),
+  gitCommitPreviewMeta: $('#gitCommitPreviewMeta'),
+  gitCommitPreviewFiles: $('#gitCommitPreviewFiles'),
+  gitCommitPreviewDiff: $('#gitCommitPreviewDiff'),
+  confirmGitCommitBtn: $('#confirmGitCommitBtn'),
+  cancelGitCommitBtn: $('#cancelGitCommitBtn'),
+  closeGitCommitDialogBtn: $('#closeGitCommitDialogBtn'),
   fileBreadcrumbs: $('#fileBreadcrumbs'),
   fileFilter: $('#fileFilter'),
   fileList: $('#fileList'),
@@ -134,13 +189,26 @@ function applyState(state) {
   updatePermissionCopy();
   updateConnectionPanel();
   updateRobloxMcpPanel();
+  updateGithubAccountPanel();
+  updateGitSelectionControls();
   renderApprovals();
   renderActivity();
+  if (!previousWorkspace || previousWorkspace !== state.workspaceRoot) {
+    selectedGitPaths.clear();
+    void loadGitDashboard();
+  }
 
   const writeSignature = (state.tasks || []).filter((task) => task.action === 'write_file' && task.status === 'completed').map((task) => task.taskId).join('|');
   if (writeSignature !== lastCompletedWrites) {
     lastCompletedWrites = writeSignature;
     if (writeSignature) loadFiles(browserPath);
+  }
+  const gitMutationSignature = (state.tasks || [])
+    .filter((task) => ['write_file', 'git_commit', 'run_command'].includes(task.action) && task.status === 'completed')
+    .map((task) => task.taskId).join('|');
+  if (gitMutationSignature !== lastCompletedGitMutations) {
+    lastCompletedGitMutations = gitMutationSignature;
+    if (gitMutationSignature) void loadGitDashboard();
   }
   if (wasLive && !state.tunnelActive) showToast('Remote connection stopped. The public URL is no longer active.');
 }
@@ -245,6 +313,459 @@ function updateRobloxMcpPanel() {
     item.append(makeElement('small', '', description ? `${permissionLabel} · ${description}` : permissionLabel));
     els.robloxMcpToolsList.append(item);
   }
+}
+
+function updateGithubAccountPanel() {
+  const configured = Boolean(appState?.githubTokenConfigured);
+  const usable = Boolean(appState?.githubTokenUsable);
+  if (els.githubTokenStatus) {
+    let message = 'No GitHub token saved.';
+    let state = '';
+    if (configured && usable) {
+      message = `Verified as ${appState?.githubLogin || 'GitHub user'}. ${appState?.githubTokenPersistent ? 'Encrypted with OS secure storage.' : 'Session-only; OS secure storage is unavailable.'}`;
+      state = 'saved';
+    } else if (configured) {
+      message = 'A saved token could not be unlocked by OS secure storage. Enter it again to use GitHub features.';
+      state = 'error';
+    }
+    els.githubTokenStatus.textContent = message;
+    els.githubTokenStatus.dataset.state = state;
+  }
+  if (els.forgetGithubTokenBtn) els.forgetGithubTokenBtn.hidden = !configured;
+  if (els.loadGithubReposBtn) els.loadGithubReposBtn.disabled = !usable;
+  if (els.githubRepositorySelect) els.githubRepositorySelect.disabled = !githubRepositories.length;
+  if (els.setGithubOriginBtn) els.setGithubOriginBtn.disabled = !usable || !els.githubRepositorySelect?.value;
+  if (els.githubTokenInput) els.githubTokenInput.placeholder = configured ? 'Enter a new token to replace the saved one' : 'Paste GitHub personal access token';
+}
+
+function isGitChangeStaged(change) {
+  return typeof change?.status === 'string' && change.status[0] !== ' ' && change.status[0] !== '?';
+}
+
+function isGitChangeUnstaged(change) {
+  return change?.status === '??'
+    || (typeof change?.status === 'string' && change.status[1] !== ' ' && change.status[1] !== '?');
+}
+
+function activeRemoteTaskExists() {
+  return (appState?.tasks || []).some((task) => ['running', 'preparing', 'awaiting_approval'].includes(task.status));
+}
+
+function selectedGitChanges() {
+  return (gitDashboard?.status?.changes || []).filter((change) => selectedGitPaths.has(change.path));
+}
+
+function updateGitSelectionControls() {
+  const selected = selectedGitChanges();
+  const stageable = selected.filter(isGitChangeUnstaged);
+  const unstageable = selected.filter(isGitChangeStaged);
+  const busy = activeRemoteTaskExists();
+  els.gitStageSelectedBtn.disabled = !stageable.length || busy;
+  els.gitUnstageSelectedBtn.disabled = !unstageable.length || busy;
+  els.gitSelectionHint.textContent = selected.length
+    ? `${selected.length} selected · ${stageable.length} can stage · ${unstageable.length} can unstage`
+    : 'Select files to stage or unstage.';
+  els.gitPreviewCommitBtn.disabled = !gitDashboard?.diff?.fileCount || busy;
+  els.saveGitIdentityBtn.disabled = busy;
+  els.saveGitRemoteBtn.disabled = busy;
+  els.initializeGitBtn.disabled = busy;
+  const instructionsBlocked = Boolean(gitDashboard?.config?.instructionsIssue);
+  els.repositoryInstructionsInput.disabled = instructionsBlocked;
+  els.saveRepositoryInstructionsBtn.disabled = busy || instructionsBlocked || (new TextEncoder().encode(els.repositoryInstructionsInput.value).length > 24 * 1024);
+}
+
+function renderGitChanges() {
+  const changes = gitDashboard?.status?.changes || [];
+  const visible = new Set(changes.map((change) => change.path));
+  selectedGitPaths = new Set([...selectedGitPaths].filter((filePath) => visible.has(filePath)));
+  els.gitChangeList.replaceChildren();
+  if (!changes.length) {
+    els.gitChangeList.append(makeElement('div', 'git-empty-row', 'Working tree is clean. No visible staged, unstaged, or untracked changes.'));
+  } else {
+    for (const change of changes) {
+      const row = makeElement('label', 'git-change-row');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = selectedGitPaths.has(change.path);
+      checkbox.setAttribute('aria-label', `Select ${change.path}, status ${change.status}`);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) selectedGitPaths.add(change.path);
+        else selectedGitPaths.delete(change.path);
+        updateGitSelectionControls();
+      });
+      const status = makeElement('span', `git-change-status${isGitChangeStaged(change) ? ' staged' : ''}`, change.status || '??');
+      const filePath = makeElement('span', 'git-change-path', change.path);
+      filePath.title = change.path;
+      row.append(checkbox, status, filePath);
+      els.gitChangeList.append(row);
+    }
+  }
+  updateGitSelectionControls();
+}
+
+function renderGitConfiguration(config) {
+  els.gitUserName.value = config.userName || '';
+  els.gitUserEmail.value = config.userEmail || '';
+  const origin = (config.remotes || []).find((remote) => remote.name === 'origin');
+  els.gitRemoteName.value = 'origin';
+  els.gitRemoteUrl.value = origin?.fetchUrl || '';
+  els.gitRemoteUrl.title = origin?.fetchUrl || '';
+  els.gitConfigSummary.textContent = (config.remotes || []).length
+    ? `${config.remotes.map((remote) => remote.name).join(', ')} · local only`
+    : 'No remotes · local only';
+  els.repositoryInstructionsInput.value = config.instructions || '';
+  els.repositoryInstructionsInput.disabled = Boolean(config.instructionsIssue);
+  els.gitInstructionsNotice.textContent = config.instructionsIssue || '';
+  els.gitInstructionsNotice.hidden = !config.instructionsIssue;
+  els.gitInstructionsSummary.textContent = config.instructionsIssue ? 'ARENA.md · unavailable'
+    : config.instructionsExists ? 'ARENA.md · loaded' : 'ARENA.md · not created';
+  updateInstructionsByteCount();
+}
+
+function renderGitDashboard(data) {
+  if (!data.available) {
+    gitDashboard = null;
+    els.gitStatusBadge.textContent = 'NO REPO';
+    els.gitStatusBadge.dataset.state = 'error';
+    els.gitBranchName.textContent = 'No Git repository at this workspace root';
+    els.gitSummaryText.textContent = 'Git commands stay scoped to the selected workspace root.';
+    els.gitCounts.hidden = true;
+    els.gitRepositoryContent.hidden = true;
+    els.gitUnavailableText.textContent = data.message || 'Choose the root folder of a Git repository to use repository tools.';
+    els.initializeGitBtn.hidden = false;
+    els.gitUnavailable.hidden = false;
+    updateGitSelectionControls();
+    return;
+  }
+
+  gitDashboard = data;
+  const status = data.status || { changes: [], branch: 'HEAD', count: 0, omittedProtectedCount: 0 };
+  const changes = Array.isArray(status.changes) ? status.changes : [];
+  const stagedCount = changes.filter(isGitChangeStaged).length;
+  const unstagedCount = changes.filter(isGitChangeUnstaged).length;
+  const hiddenCount = Number(status.omittedProtectedCount) || 0;
+  const hasChanges = changes.length > 0 || hiddenCount > 0;
+  els.gitStatusBadge.textContent = hasChanges ? `${changes.length} CHANGES` : 'CLEAN';
+  els.gitStatusBadge.dataset.state = hasChanges ? 'dirty' : 'ready';
+  els.gitBranchName.textContent = status.branch || 'HEAD';
+  els.gitBranchName.title = status.branch || 'HEAD';
+  const summary = [
+    `${changes.length} visible change${changes.length === 1 ? '' : 's'}`,
+    hiddenCount ? `${hiddenCount} protected path${hiddenCount === 1 ? '' : 's'} hidden` : '',
+    status.truncated ? 'status list truncated' : '',
+  ].filter(Boolean).join(' · ');
+  els.gitSummaryText.textContent = summary;
+  els.gitCounts.hidden = false;
+  els.gitStagedCount.textContent = String(stagedCount);
+  els.gitUnstagedCount.textContent = String(unstagedCount);
+  els.gitUnavailable.hidden = true;
+  els.gitRepositoryContent.hidden = false;
+  renderGitChanges();
+  renderGitConfiguration(data.config || {});
+
+  const diff = data.diff || { files: [], diff: '', fileCount: 0, truncated: false };
+  els.gitDiffSummary.textContent = `${diff.fileCount || 0} file${diff.fileCount === 1 ? '' : 's'}${diff.truncated ? ' · truncated' : ''}`;
+  els.gitStagedDiff.textContent = diff.diff || 'No staged changes. Working-tree changes are intentionally not included in this diff.';
+  els.copyGitDiffBtn.disabled = !diff.diff;
+  els.gitHistory.textContent = data.log?.output || 'No commit history yet.';
+  els.gitHistorySummary.textContent = `${data.log?.count || 0} recent commits${data.log?.truncated ? ' · truncated' : ''}`;
+  updateGitSelectionControls();
+  updateGithubAccountPanel();
+}
+
+async function loadGitDashboard() {
+  const sequence = ++gitLoadSequence;
+  gitDashboard = null;
+  els.gitRepositoryContent.hidden = true;
+  els.gitUnavailable.hidden = true;
+  els.gitCounts.hidden = true;
+  els.gitStatusBadge.textContent = 'CHECKING';
+  els.gitStatusBadge.dataset.state = 'loading';
+  els.gitBranchName.textContent = 'Checking repository…';
+  els.gitSummaryText.textContent = 'Loading local Git status and repository settings.';
+  els.refreshGitBtn.disabled = true;
+  try {
+    const data = await window.arenaLocal.getGitDashboard();
+    if (sequence !== gitLoadSequence) return;
+    renderGitDashboard(data);
+  } catch (error) {
+    if (sequence !== gitLoadSequence) return;
+    gitDashboard = null;
+    els.gitStatusBadge.textContent = 'ERROR';
+    els.gitStatusBadge.dataset.state = 'error';
+    els.gitBranchName.textContent = 'Could not read Git repository';
+    els.gitSummaryText.textContent = 'Check the selected workspace and local Git installation.';
+    els.gitRepositoryContent.hidden = true;
+    els.gitUnavailableText.textContent = error.message || 'Could not load repository status.';
+    els.initializeGitBtn.hidden = true;
+    els.gitUnavailable.hidden = false;
+  } finally {
+    if (sequence === gitLoadSequence) {
+      els.refreshGitBtn.disabled = false;
+      updateGitSelectionControls();
+    }
+  }
+}
+
+function updateInstructionsByteCount() {
+  const bytes = new TextEncoder().encode(els.repositoryInstructionsInput.value).length;
+  const kilobytes = (bytes / 1024).toFixed(bytes && bytes < 1024 ? 2 : 1);
+  els.gitInstructionsBytes.textContent = `${kilobytes} / 24 KB`;
+  els.gitInstructionsBytes.classList.toggle('over-limit', bytes > 24 * 1024);
+  if (gitDashboard?.config) {
+    const saved = els.repositoryInstructionsInput.value === (gitDashboard.config.instructions || '');
+    els.saveRepositoryInstructionsBtn.textContent = saved ? 'Saved' : 'Save ARENA.md';
+  }
+  updateGitSelectionControls();
+}
+
+async function stageSelectedGitFiles() {
+  const selected = selectedGitChanges().filter(isGitChangeUnstaged).map((change) => change.path);
+  if (!selected.length) return;
+  els.gitStageSelectedBtn.disabled = true;
+  try {
+    const result = await window.arenaLocal.stageGitFiles(selected);
+    selectedGitPaths.clear();
+    showToast(`Staged ${result.stagedCount} file${result.stagedCount === 1 ? '' : 's'}. Configured Git filters were disabled.`);
+    await loadGitDashboard();
+  } catch (error) {
+    showToast(error.message || 'Could not stage the selected files.', true);
+    await loadGitDashboard();
+  }
+}
+
+async function unstageSelectedGitFiles() {
+  const selected = selectedGitChanges().filter(isGitChangeStaged).map((change) => change.path);
+  if (!selected.length) return;
+  els.gitUnstageSelectedBtn.disabled = true;
+  try {
+    const result = await window.arenaLocal.unstageGitFiles(selected);
+    selectedGitPaths.clear();
+    showToast(`Unstaged ${result.unstagedCount} file${result.unstagedCount === 1 ? '' : 's'}. Working files were not changed.`);
+    await loadGitDashboard();
+  } catch (error) {
+    showToast(error.message || 'Could not unstage the selected files.', true);
+    await loadGitDashboard();
+  }
+}
+
+async function initializeGitRepository() {
+  els.initializeGitBtn.disabled = true;
+  try {
+    const result = await window.arenaLocal.initializeGitRepository();
+    if (result.initialized) showToast(`Initialized a local Git repository on ${result.branch}. No remote was added.`);
+    await loadGitDashboard();
+  } catch (error) {
+    showToast(error.message || 'Could not initialize Git at the selected workspace root.', true);
+  } finally {
+    updateGitSelectionControls();
+  }
+}
+
+async function saveGitIdentity() {
+  els.saveGitIdentityBtn.disabled = true;
+  try {
+    await window.arenaLocal.configureGitRepository({ userName: els.gitUserName.value, userEmail: els.gitUserEmail.value });
+    showToast('Repository-local Git author identity saved. Global Git settings were not changed.');
+    await loadGitDashboard();
+  } catch (error) {
+    showToast(error.message || 'Could not save the repository Git identity.', true);
+  } finally {
+    updateGitSelectionControls();
+  }
+}
+
+async function saveGitRemote() {
+  els.saveGitRemoteBtn.disabled = true;
+  try {
+    const result = await window.arenaLocal.configureGitRepository({ remoteName: els.gitRemoteName.value, remoteUrl: els.gitRemoteUrl.value });
+    showToast(`${result.configured.remote.updated ? 'Updated' : 'Added'} ${result.configured.remote.name} remote locally. Nothing was pushed.`);
+    await loadGitDashboard();
+  } catch (error) {
+    showToast(error.message || 'Could not configure the repository remote.', true);
+  } finally {
+    updateGitSelectionControls();
+  }
+}
+
+async function saveRepositoryInstructions() {
+  els.saveRepositoryInstructionsBtn.disabled = true;
+  try {
+    const result = await window.arenaLocal.saveRepositoryInstructions(els.repositoryInstructionsInput.value);
+    if (gitDashboard?.config) {
+      gitDashboard.config.instructions = els.repositoryInstructionsInput.value;
+      gitDashboard.config.instructionsExists = true;
+      gitDashboard.config.instructionsIssue = '';
+    }
+    els.gitInstructionsNotice.hidden = true;
+    els.gitInstructionsSummary.textContent = 'ARENA.md · saved';
+    updateInstructionsByteCount();
+    showToast(`Saved ${result.path} locally (${result.bytes} bytes).`);
+  } catch (error) {
+    showToast(error.message || 'Could not save ARENA.md.', true);
+  } finally {
+    updateGitSelectionControls();
+  }
+}
+
+async function saveGithubToken() {
+  els.saveGithubTokenBtn.disabled = true;
+  els.forgetGithubTokenBtn.disabled = true;
+  els.githubTokenInput.disabled = true;
+  els.githubTokenStatus.textContent = 'Verifying token directly with GitHub…';
+  els.githubTokenStatus.dataset.state = '';
+  try {
+    const result = await window.arenaLocal.saveGithubToken(els.githubTokenInput.value);
+    els.githubTokenInput.value = '';
+    appState = { ...appState, githubTokenConfigured: true, githubTokenUsable: true, githubTokenPersistent: result.persistent, githubLogin: result.login };
+    githubRepositories = [];
+    els.githubRepositorySelect.replaceChildren(new Option('Load your repositories', ''));
+    els.githubRepositoryStatus.textContent = 'Token verified. Load repositories to select a local HTTPS remote.';
+    showToast(`GitHub token verified for ${result.login}.`);
+    updateGithubAccountPanel();
+  } catch (error) {
+    els.githubTokenStatus.textContent = error.message || 'Could not verify the GitHub token.';
+    els.githubTokenStatus.dataset.state = 'error';
+    showToast(error.message || 'Could not verify the GitHub token.', true);
+  } finally {
+    els.saveGithubTokenBtn.disabled = false;
+    els.githubTokenInput.disabled = false;
+    els.forgetGithubTokenBtn.disabled = false;
+    updateGithubAccountPanel();
+  }
+}
+
+async function forgetGithubToken() {
+  els.forgetGithubTokenBtn.disabled = true;
+  els.saveGithubTokenBtn.disabled = true;
+  els.githubTokenInput.disabled = true;
+  try {
+    await window.arenaLocal.forgetGithubToken();
+    appState = { ...appState, githubTokenConfigured: false, githubTokenUsable: false, githubTokenPersistent: false, githubLogin: '' };
+    githubRepositories = [];
+    els.githubRepositorySelect.replaceChildren(new Option('Load your repositories', ''));
+    els.githubRepositoryStatus.textContent = 'GitHub token removed from Arena Local. Existing Git remotes are unchanged.';
+    showToast('GitHub token forgotten. Local Git remotes were not changed.');
+    updateGithubAccountPanel();
+  } catch (error) {
+    showToast(error.message || 'Could not remove the GitHub token.', true);
+  } finally {
+    els.forgetGithubTokenBtn.disabled = false;
+    els.saveGithubTokenBtn.disabled = false;
+    els.githubTokenInput.disabled = false;
+    updateGithubAccountPanel();
+  }
+}
+
+async function loadGithubRepositories() {
+  els.loadGithubReposBtn.disabled = true;
+  els.githubRepositoryStatus.textContent = 'Loading up to 100 repositories from GitHub…';
+  try {
+    const result = await window.arenaLocal.listGithubRepositories();
+    githubRepositories = Array.isArray(result.repositories) ? result.repositories : [];
+    els.githubRepositorySelect.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = githubRepositories.length ? 'Choose a repository…' : 'No repositories returned';
+    els.githubRepositorySelect.append(placeholder);
+    for (const repository of githubRepositories) {
+      const option = document.createElement('option');
+      option.value = repository.cloneUrl;
+      option.textContent = `${repository.private ? 'Private · ' : ''}${repository.fullName}`;
+      option.dataset.webUrl = repository.webUrl;
+      els.githubRepositorySelect.append(option);
+    }
+    els.githubRepositoryStatus.textContent = `${githubRepositories.length} ${githubRepositories.length === 1 ? 'repository' : 'repositories'} loaded. Selecting one only changes this computer’s local remote configuration.${result.truncated ? ' List limited to the 100 most recently updated results.' : ''}`;
+    updateGithubAccountPanel();
+  } catch (error) {
+    els.githubRepositoryStatus.textContent = error.message || 'Could not load repositories from GitHub.';
+    showToast(error.message || 'Could not load GitHub repositories.', true);
+  } finally {
+    els.loadGithubReposBtn.disabled = !appState?.githubTokenUsable;
+  }
+}
+
+async function setGithubOrigin() {
+  const remoteUrl = els.githubRepositorySelect.value;
+  const repository = githubRepositories.find((item) => item.cloneUrl === remoteUrl);
+  if (!repository) return;
+  const existingOrigin = (gitDashboard?.config?.remotes || []).some((remote) => remote.name === 'origin');
+  if (existingOrigin && !window.confirm(`Replace the existing origin URL with ${repository.fullName}? This changes local Git configuration only; it will not fetch or push.`)) return;
+  els.setGithubOriginBtn.disabled = true;
+  try {
+    await window.arenaLocal.configureGitRepository({ remoteName: 'origin', remoteUrl: repository.cloneUrl });
+    els.gitRemoteName.value = 'origin';
+    els.gitRemoteUrl.value = repository.cloneUrl;
+    showToast(`Set origin to ${repository.fullName}. No GitHub write or push occurred.`);
+    await loadGitDashboard();
+  } catch (error) {
+    showToast(error.message || 'Could not set the origin remote.', true);
+  } finally {
+    updateGithubAccountPanel();
+    updateGitSelectionControls();
+  }
+}
+
+async function copyGitDiff() {
+  const diff = gitDashboard?.diff?.diff || '';
+  if (!diff) return;
+  try {
+    await navigator.clipboard.writeText(diff);
+    showToast('Staged-only Git diff copied to the clipboard.');
+  } catch {
+    showToast('Could not copy the staged diff. Your system clipboard may be unavailable.', true);
+  }
+}
+
+async function previewLocalGitCommit() {
+  const message = els.gitCommitMessage.value.trim();
+  if (!message) {
+    showToast('Enter a one-line commit message first.', true);
+    els.gitCommitMessage.focus();
+    return;
+  }
+  els.gitPreviewCommitBtn.disabled = true;
+  try {
+    const preview = await window.arenaLocal.previewGitCommit(message);
+    gitCommitPreview = { ...preview, message };
+    els.gitCommitPreviewMeta.textContent = `Branch: ${preview.branch} · ${preview.fileCount} staged file${preview.fileCount === 1 ? '' : 's'} · Message: ${message}`;
+    els.gitCommitPreviewFiles.textContent = preview.files.join('\n');
+    els.gitCommitPreviewDiff.textContent = preview.diff || '(empty staged diff)';
+    els.gitCommitPreviewDialog.showModal();
+  } catch (error) {
+    showToast(error.message || 'Could not prepare a staged commit preview.', true);
+  } finally {
+    updateGitSelectionControls();
+  }
+}
+
+async function confirmLocalGitCommit() {
+  if (!gitCommitPreview) return;
+  els.confirmGitCommitBtn.disabled = true;
+  try {
+    const result = await window.arenaLocal.commitStagedGit(gitCommitPreview.message, gitCommitPreview.fingerprint);
+    if (!result.committed) {
+      showToast('Local commit canceled. No files were pushed.');
+      return;
+    }
+    els.gitCommitPreviewDialog.close();
+    gitCommitPreview = null;
+    els.gitCommitMessage.value = '';
+    showToast(`Created local commit ${result.commit}. Nothing was pushed.`);
+    await loadGitDashboard();
+  } catch (error) {
+    els.gitCommitPreviewDialog.close();
+    gitCommitPreview = null;
+    showToast(error.message || 'Could not create the local commit.', true);
+    await loadGitDashboard();
+  } finally {
+    els.confirmGitCommitBtn.disabled = false;
+  }
+}
+
+function closeGitCommitPreview() {
+  gitCommitPreview = null;
+  if (els.gitCommitPreviewDialog.open) els.gitCommitPreviewDialog.close();
 }
 
 function updateScopePanel() {
@@ -971,6 +1492,28 @@ $('#cancelTunnelBtn').addEventListener('click', cancelTunnelStart);
 $('#stopTunnelBtn').addEventListener('click', stopTunnel);
 els.connectRobloxMcpBtn.addEventListener('click', connectRobloxMcp);
 els.disconnectRobloxMcpBtn.addEventListener('click', disconnectRobloxMcp);
+els.refreshGitBtn.addEventListener('click', () => loadGitDashboard());
+els.gitStageSelectedBtn.addEventListener('click', stageSelectedGitFiles);
+els.gitUnstageSelectedBtn.addEventListener('click', unstageSelectedGitFiles);
+els.copyGitDiffBtn.addEventListener('click', copyGitDiff);
+els.initializeGitBtn.addEventListener('click', initializeGitRepository);
+els.gitPreviewCommitBtn.addEventListener('click', previewLocalGitCommit);
+els.confirmGitCommitBtn.addEventListener('click', confirmLocalGitCommit);
+els.cancelGitCommitBtn.addEventListener('click', closeGitCommitPreview);
+els.closeGitCommitDialogBtn.addEventListener('click', closeGitCommitPreview);
+els.gitCommitPreviewDialog.addEventListener('cancel', (event) => {
+  event.preventDefault();
+  closeGitCommitPreview();
+});
+els.saveGitIdentityBtn.addEventListener('click', saveGitIdentity);
+els.saveGitRemoteBtn.addEventListener('click', saveGitRemote);
+els.saveRepositoryInstructionsBtn.addEventListener('click', saveRepositoryInstructions);
+els.repositoryInstructionsInput.addEventListener('input', updateInstructionsByteCount);
+els.saveGithubTokenBtn.addEventListener('click', saveGithubToken);
+els.forgetGithubTokenBtn.addEventListener('click', forgetGithubToken);
+els.loadGithubReposBtn.addEventListener('click', loadGithubRepositories);
+els.githubRepositorySelect.addEventListener('change', updateGithubAccountPanel);
+els.setGithubOriginBtn.addEventListener('click', setGithubOrigin);
 $('#copyArenaPromptBtn').addEventListener('click', copyArenaInstructions);
 $('#copyUrlBtn').addEventListener('click', copyTunnelUrl);
 $('#rotatePairingBtn').addEventListener('click', rotatePairingKey);

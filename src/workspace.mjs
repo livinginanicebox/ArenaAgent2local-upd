@@ -22,6 +22,7 @@ const SENSITIVE_NAMES = [
   /^\.npmrc$/i,
   /^\.pypirc$/i,
   /^\.netrc$/i,
+  /^\.arena-local-instructions-[a-f0-9-]+\.tmp$/i,
   /^credentials?(?:\..*)?$/i,
   /^id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?$/i,
   /\.(?:pem|key|p12|pfx|kdbx)$/i,

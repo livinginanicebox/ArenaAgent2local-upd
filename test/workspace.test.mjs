@@ -38,6 +38,17 @@ test('workspace listing and reading stay within the selected root', async (t) =>
   await assert.rejects(readForAgent(root, '.git/config'), /protected directory/i);
 });
 
+test('atomic ARENA.md save leftovers remain protected from file reads and search', async (t) => {
+  const { root } = await makeWorkspace(t);
+  const temporaryName = '.arena-local-instructions-01234567-89ab-cdef-0123-456789abcdef.tmp';
+  await fs.writeFile(path.join(root, temporaryName), 'private repository-instructions draft');
+  const listing = await listWorkspace(root, '.');
+  assert.equal(listing.entries.find((entry) => entry.name === temporaryName).protected, true);
+  await assert.rejects(readForAgent(root, temporaryName), /protected/i);
+  const results = await searchWorkspace(root, 'private repository-instructions');
+  assert.deepEqual(results.matches, []);
+});
+
 test('parent traversal, absolute paths, and symbolic links are rejected', async (t) => {
   const { parent, root } = await makeWorkspace(t);
   await fs.writeFile(path.join(parent, 'outside.txt'), 'outside');

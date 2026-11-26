@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
-import { promises as fs } from 'node:fs';
+import { constants as fsConstants, promises as fs } from 'node:fs';
 import { isProtectedWorkspacePath } from './workspace.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -163,6 +163,226 @@ async function assertWorkspaceRepositoryRoot(root) {
   if (!samePath(realDiscoveredRoot, realWorkspaceRoot)) {
     throw new Error('Git actions are limited to a repository whose root is the selected workspace.');
   }
+  return realWorkspaceRoot;
+}
+
+const REPOSITORY_INSTRUCTIONS_FILE = 'ARENA.md';
+const MAX_REPOSITORY_INSTRUCTIONS_BYTES = 24 * 1024;
+const REMOTE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+function normalizeHttpsRemoteUrl(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 2_048 || /[\u0000-\u0020\u007f]/.test(value)) {
+    throw new Error('Remote URL must be an HTTPS URL without whitespace or control characters.');
+  }
+  let parsed;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    throw new Error('Remote URL must be a valid HTTPS URL.');
+  }
+  if (parsed.protocol !== 'https:' || !parsed.hostname || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error('Remote URL must use HTTPS and must not include embedded credentials, a query, or a fragment.');
+  }
+  parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+  if (!parsed.pathname) throw new Error('Remote URL must include a repository path.');
+  return parsed.toString().replace(/\/$/, '');
+}
+
+function redactRemoteUrl(value) {
+  if (typeof value !== 'string' || !value) return '';
+  try {
+    const parsed = new URL(value);
+    if (['https:', 'http:', 'ssh:'].includes(parsed.protocol)) {
+      const host = parsed.host;
+      const pathname = parsed.pathname.replace(/\/{2,}/g, '/');
+      return `${parsed.protocol}//${host}${pathname}`.slice(0, 2_048);
+    }
+  } catch {
+    const scpStyle = /^(?:[^@/:\\]+@)?([^:/\\]+):([^\r\n]+)$/.exec(value);
+    if (scpStyle) return `${scpStyle[1]}:${scpStyle[2]}`.slice(0, 2_048);
+  }
+  return '[local or unsupported remote]';
+}
+
+function validateIdentity(value, label, maxLength = 200) {
+  if (typeof value !== 'string' || !value.trim() || value.trim().length > maxLength || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new Error(`${label} must contain 1–${maxLength} characters on one line.`);
+  }
+  return value.trim();
+}
+
+async function optionalLocalConfig(root, key) {
+  const result = await runGit(root, ['config', '--local', '--get', key]);
+  if (result.exitCode === 1 && !result.stdout && !result.stderr.trim()) return '';
+  if (result.exitCode !== 0) throw new Error(gitFailure(result));
+  return trimLineEnding(result.stdout);
+}
+
+function parseRemoteNames(value) {
+  return String(value ?? '').split(/\r?\n/).map((name) => name.trim()).filter((name) => REMOTE_NAME_PATTERN.test(name)).slice(0, 30);
+}
+
+export async function initializeGitRepository(root) {
+  let workspaceRoot;
+  try {
+    workspaceRoot = await fs.realpath(root);
+  } catch {
+    throw new Error('Could not safely resolve the selected workspace root.');
+  }
+  const existing = await runGit(workspaceRoot, ['rev-parse', '--show-toplevel']);
+  if (existing.exitCode === 0) {
+    const discovered = trimLineEnding(existing.stdout);
+    let realDiscovered;
+    try { realDiscovered = await fs.realpath(path.isAbsolute(discovered) ? discovered : path.resolve(workspaceRoot, discovered)); }
+    catch { throw new Error('Could not safely resolve the existing Git repository root.'); }
+    if (samePath(realDiscovered, workspaceRoot)) return { initialized: false, branch: await runGit(workspaceRoot, ['branch', '--show-current']).then((result) => trimLineEnding(result.stdout) || 'HEAD') };
+    throw new Error('The selected workspace is inside a different Git repository. Choose that repository root instead of creating a nested repository.');
+  }
+  if (existing.exitCode === null && existing.error) throw new Error(existing.error || 'Git is not available.');
+  const initialized = await runGit(workspaceRoot, ['-c', 'init.templateDir=', 'init', '--quiet', '--initial-branch=main', '--template=']);
+  if (initialized.exitCode !== 0) throw new Error(gitFailure(initialized));
+  await assertWorkspaceRepositoryRoot(workspaceRoot);
+  return { initialized: true, branch: 'main' };
+}
+
+export async function getGitRepositoryConfig(root) {
+  const repositoryRoot = await assertWorkspaceRepositoryRoot(root);
+  const [branchResult, userName, userEmail, remoteNamesResult] = await Promise.all([
+    requireGitSuccess(repositoryRoot, ['branch', '--show-current']),
+    optionalLocalConfig(repositoryRoot, 'user.name'),
+    optionalLocalConfig(repositoryRoot, 'user.email'),
+    requireGitSuccess(repositoryRoot, ['remote']),
+  ]);
+  const remotes = [];
+  for (const name of parseRemoteNames(remoteNamesResult.stdout)) {
+    const urlResult = await runGit(repositoryRoot, ['config', '--local', '--get-all', `remote.${name}.url`]);
+    if (urlResult.exitCode !== 0) continue;
+    const urls = urlResult.stdout.split(/\r?\n/).filter(Boolean);
+    remotes.push({ name, fetchUrl: redactRemoteUrl(urls[0] || '') });
+  }
+
+  let instructions = '';
+  let instructionsExists = false;
+  let instructionsIssue = '';
+  const instructionsPath = path.join(repositoryRoot, REPOSITORY_INSTRUCTIONS_FILE);
+  try {
+    const info = await fs.lstat(instructionsPath);
+    instructionsExists = true;
+    if (info.isSymbolicLink() || !info.isFile()) instructionsIssue = `${REPOSITORY_INSTRUCTIONS_FILE} is not a regular file; it will not be opened or overwritten here.`;
+    else if (info.size > MAX_REPOSITORY_INSTRUCTIONS_BYTES) instructionsIssue = `${REPOSITORY_INSTRUCTIONS_FILE} is larger than the 24 KB editor limit; edit it outside this panel.`;
+    else {
+      const noFollow = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW || 0);
+      const handle = await fs.open(instructionsPath, fsConstants.O_RDONLY | noFollow);
+      try {
+        const openedInfo = await handle.stat();
+        if (!openedInfo.isFile()) instructionsIssue = `${REPOSITORY_INSTRUCTIONS_FILE} is not a regular file; it will not be opened here.`;
+        else if (openedInfo.size > MAX_REPOSITORY_INSTRUCTIONS_BYTES) instructionsIssue = `${REPOSITORY_INSTRUCTIONS_FILE} is larger than the 24 KB editor limit; edit it outside this panel.`;
+        else {
+          const buffer = Buffer.alloc(MAX_REPOSITORY_INSTRUCTIONS_BYTES + 1);
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+          const afterRead = await handle.stat();
+          if (bytesRead > MAX_REPOSITORY_INSTRUCTIONS_BYTES || afterRead.size > MAX_REPOSITORY_INSTRUCTIONS_BYTES) {
+            instructionsIssue = `${REPOSITORY_INSTRUCTIONS_FILE} is larger than the 24 KB editor limit; edit it outside this panel.`;
+          } else {
+            const content = buffer.subarray(0, bytesRead);
+            if (content.includes(0)) instructionsIssue = `${REPOSITORY_INSTRUCTIONS_FILE} is not a text file; it will not be opened here.`;
+            else instructions = content.toString('utf8');
+          }
+        }
+      } finally {
+        await handle.close();
+      }
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      instructionsExists = true;
+      instructionsIssue = `${REPOSITORY_INSTRUCTIONS_FILE} could not be read safely.`;
+    }
+  }
+
+  return {
+    branch: trimLineEnding(branchResult.stdout) || 'HEAD',
+    userName,
+    userEmail,
+    remotes,
+    instructionsFile: REPOSITORY_INSTRUCTIONS_FILE,
+    instructions,
+    instructionsExists,
+    instructionsIssue,
+  };
+}
+
+export async function saveGitRepositoryConfig(root, settings = {}) {
+  const repositoryRoot = await assertWorkspaceRepositoryRoot(root);
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Git repository settings must be an object.');
+  const configured = {};
+  for (const [field, key, label] of [['userName', 'user.name', 'Git author name'], ['userEmail', 'user.email', 'Git author email']]) {
+    if (settings[field] === undefined) continue;
+    const value = settings[field] === '' ? '' : validateIdentity(settings[field], label);
+    if (field === 'userEmail' && value && !/^[^\s@]+@[^\s@]+$/.test(value)) throw new Error('Git author email must be a valid email address.');
+    if (value) {
+      const result = await runGit(repositoryRoot, ['config', '--local', key, value]);
+      if (result.exitCode !== 0) throw new Error(gitFailure(result));
+    } else {
+      const result = await runGit(repositoryRoot, ['config', '--local', '--unset-all', key]);
+      if (result.exitCode !== 0 && result.exitCode !== 5) throw new Error(gitFailure(result));
+    }
+    configured[field] = value;
+  }
+
+  if (settings.remoteName !== undefined || settings.remoteUrl !== undefined) {
+    if (typeof settings.remoteName !== 'string' || !REMOTE_NAME_PATTERN.test(settings.remoteName)) {
+      throw new Error('Remote name must start with a letter or number and contain only letters, numbers, dots, underscores, or hyphens (64 characters maximum).');
+    }
+    const remoteUrl = normalizeHttpsRemoteUrl(settings.remoteUrl);
+    const existing = await requireGitSuccess(repositoryRoot, ['remote']);
+    const exists = parseRemoteNames(existing.stdout).includes(settings.remoteName);
+    const result = await runGit(repositoryRoot, exists
+      ? ['remote', 'set-url', settings.remoteName, remoteUrl]
+      : ['remote', 'add', settings.remoteName, remoteUrl]);
+    if (result.exitCode !== 0) throw new Error(gitFailure(result));
+    configured.remote = { name: settings.remoteName, url: remoteUrl, updated: exists };
+  }
+
+  return {
+    action: 'configure_git_repository',
+    permission: 'local_only',
+    path: 'repository',
+    configured,
+    message: 'Local Git configuration updated. No GitHub write, fetch, or push was performed.',
+  };
+}
+
+export async function saveRepositoryInstructions(root, content) {
+  const repositoryRoot = await assertWorkspaceRepositoryRoot(root);
+  if (typeof content !== 'string') throw new Error('Repository instructions must be plain text.');
+  if (content.includes('\0')) throw new Error('Repository instructions cannot contain null characters.');
+  const bytes = Buffer.byteLength(content, 'utf8');
+  if (bytes > MAX_REPOSITORY_INSTRUCTIONS_BYTES) throw new Error('Repository instructions must be 24 KB or smaller.');
+
+  const target = path.join(repositoryRoot, REPOSITORY_INSTRUCTIONS_FILE);
+  try {
+    const info = await fs.lstat(target);
+    if (info.isSymbolicLink() || !info.isFile()) throw new Error(`${REPOSITORY_INSTRUCTIONS_FILE} is not a regular file and will not be overwritten.`);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+
+  const temporary = path.join(repositoryRoot, `.arena-local-instructions-${crypto.randomUUID()}.tmp`);
+  try {
+    await fs.writeFile(temporary, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    await fs.rename(temporary, target);
+  } catch (error) {
+    await fs.unlink(temporary).catch(() => {});
+    throw error;
+  }
+  return {
+    action: 'save_repository_instructions',
+    permission: 'local_only',
+    path: REPOSITORY_INSTRUCTIONS_FILE,
+    bytes,
+    message: 'Repository-specific instructions saved locally as ARENA.md.',
+  };
 }
 
 function nulSeparatedValues(value) {
@@ -183,10 +403,15 @@ function parseGitStatus(value) {
 }
 
 async function readGitHead(root) {
-  const branchResult = await requireGitSuccess(root, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const symbolicBranch = await runGit(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+  let branch = symbolicBranch.exitCode === 0 ? trimLineEnding(symbolicBranch.stdout) : '';
+  if (!branch) {
+    const detachedBranch = await runGit(root, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    if (detachedBranch.exitCode === 0) branch = trimLineEnding(detachedBranch.stdout);
+  }
   const headResult = await runGit(root, ['rev-parse', '--verify', 'HEAD']);
   return {
-    branch: trimLineEnding(branchResult.stdout) || 'HEAD',
+    branch: branch || 'HEAD',
     head: headResult.exitCode === 0 ? trimLineEnding(headResult.stdout) : '',
   };
 }
@@ -296,7 +521,7 @@ export async function executeLocalReadTool(root, name, args = {}) {
       await assertWorkspaceRepositoryRoot(root);
       const [{ branch }, statusResult] = await Promise.all([
         readGitHead(root),
-        requireGitSuccess(root, ['status', '--porcelain=v1', '-z', '--untracked-files=normal', '--ignore-submodules=all', '--no-renames'], { disableContentFilters: true }),
+        requireGitSuccess(root, ['status', '--porcelain=v1', '-z', `--untracked-files=${args.includeUntrackedFiles === true ? 'all' : 'normal'}`, '--ignore-submodules=all', '--no-renames'], { disableContentFilters: true }),
       ]);
       const changes = [];
       let omittedProtectedCount = 0;
@@ -330,6 +555,8 @@ export async function executeLocalReadTool(root, name, args = {}) {
     }
     case 'git_log': {
       await assertWorkspaceRepositoryRoot(root);
+      const head = await runGit(root, ['rev-parse', '--verify', 'HEAD']);
+      if (head.exitCode !== 0) return { output: '', count: 0, truncated: false };
       const limit = Number.isInteger(args.limit) ? Math.min(50, Math.max(1, args.limit)) : 20;
       const result = await requireGitSuccess(root, [
         'log', '-n', String(limit), '--date=short', '--no-color', '--no-decorate',
@@ -343,6 +570,47 @@ export async function executeLocalReadTool(root, name, args = {}) {
     default:
       throw new Error(`Unknown local read-only tool: ${name}`);
   }
+}
+
+async function validateGitUiPaths(root, filePaths) {
+  if (!Array.isArray(filePaths) || filePaths.length < 1 || filePaths.length > 100) {
+    throw new Error('Select between 1 and 100 changed files.');
+  }
+  const repositoryRoot = await assertWorkspaceRepositoryRoot(root);
+  const status = await executeLocalReadTool(repositoryRoot, 'git_status', { includeUntrackedFiles: true });
+  const visiblePaths = new Set(status.changes.map((change) => change.path));
+  const unique = new Set();
+  for (const filePath of filePaths) {
+    if (typeof filePath !== 'string' || !filePath || filePath.length > 1_000 || filePath.includes('\0')
+      || filePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(filePath)
+      || filePath.split(/[\\/]/).some((segment) => segment === '..')
+      || isProtectedWorkspacePath(filePath)) {
+      throw new Error('A selected path is invalid or protected. Refresh the Git status and select only visible workspace files.');
+    }
+    if (!visiblePaths.has(filePath)) throw new Error('Git status changed. Refresh the file list and select the current changed files.');
+    unique.add(filePath);
+  }
+  return { repositoryRoot, filePaths: [...unique] };
+}
+
+export async function stageGitFiles(root, filePaths) {
+  const validated = await validateGitUiPaths(root, filePaths);
+  const result = await runGit(validated.repositoryRoot, [
+    'add', '--', ...validated.filePaths.map((filePath) => `:(literal)${filePath}`),
+  ], { disableContentFilters: true });
+  if (result.exitCode !== 0) throw new Error(gitFailure(result));
+  return { action: 'stage_git_files', permission: 'local_only', stagedCount: validated.filePaths.length, contentFiltersDisabled: true };
+}
+
+export async function unstageGitFiles(root, filePaths) {
+  const validated = await validateGitUiPaths(root, filePaths);
+  const head = await runGit(validated.repositoryRoot, ['rev-parse', '--verify', 'HEAD']);
+  const paths = validated.filePaths.map((filePath) => `:(literal)${filePath}`);
+  const result = head.exitCode === 0
+    ? await runGit(validated.repositoryRoot, ['reset', '--quiet', '--', ...paths], { disableContentFilters: true })
+    : await runGit(validated.repositoryRoot, ['rm', '--cached', '--ignore-unmatch', '--', ...paths], { disableContentFilters: true });
+  if (result.exitCode !== 0) throw new Error(gitFailure(result));
+  return { action: 'unstage_git_files', permission: 'local_only', unstagedCount: validated.filePaths.length };
 }
 
 async function prepareStagedGitChanges(root, message) {

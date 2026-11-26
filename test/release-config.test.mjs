@@ -16,6 +16,8 @@ const desktopTheme = await readFile(new URL('../public/desktop-theme.css', impor
 const desktopAppJs = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
 const desktopPreload = await readFile(new URL('../desktop/preload.cjs', import.meta.url), 'utf8');
 const remoteApi = await readFile(new URL('../src/remote-api.mjs', import.meta.url), 'utf8');
+const localTools = await readFile(new URL('../src/local-tools.mjs', import.meta.url), 'utf8');
+const githubApi = await readFile(new URL('../src/github-api.mjs', import.meta.url), 'utf8');
 
 test('Windows installer artifact name matches the release and Pages download links', () => {
   const expectedInstaller = 'Arena-Local-Setup.exe';
@@ -83,6 +85,33 @@ test('full-computer access is opt-in and temporary; combining with No-Ask requir
   assert.ok(agentGuide.includes('## Full computer access — EXTREMELY DANGEROUS'));
   assert.match(agentGuide, /reads run without per-file approval/i);
   assert.match(agentGuide, /30-second lockout, slide-to-unlock, and final native confirmation/i);
+});
+
+test('Git and GitHub workbench keeps credentials local and preserves staged-only, root-scoped safety', () => {
+  for (const method of ['getGitDashboard', 'initializeGitRepository', 'configureGitRepository', 'saveRepositoryInstructions', 'stageGitFiles', 'unstageGitFiles', 'previewGitCommit', 'commitStagedGit', 'saveGithubToken', 'forgetGithubToken', 'listGithubRepositories']) {
+    assert.match(desktopPreload, new RegExp(`\\b${method}: invoke\\(`), `Preload should explicitly allowlist ${method}.`);
+  }
+  assert.match(desktopMain, /encryptedGithubToken/);
+  assert.match(desktopMain, /githubTokenUsable: Boolean\(githubToken\)/);
+  assert.match(desktopMain, /verifyGithubToken\(token\)/);
+  assert.match(desktopMain, /assertTrustedUiEvent\(event\)/);
+  assert.match(githubApi, /https:\/\/api\.github\.com/);
+  assert.match(githubApi, /redirect: 'error'/);
+  assert.ok(githubApi.includes("'/user/repos?per_page=100&sort=updated&type=all'"));
+  assert.match(githubApi, /cloneUrl: `https:\/\/github\.com\/\$\{repo\.full_name\}\.git`/);
+  assert.doesNotMatch(remoteApi, /githubToken|saveGithubToken|listGithubRepositories/);
+  assert.match(localTools, /assertWorkspaceRepositoryRoot\(root\)/);
+  assert.match(localTools, /disableContentFilters: true/);
+  assert.match(localTools, /gitChangedPaths\(root, true\)/);
+  assert.match(localTools, /Repository-specific instructions saved locally as ARENA\.md/);
+  assert.ok(desktopUi.includes('id="gitRepository"'));
+  assert.ok(desktopUi.includes('id="githubTokenInput"'));
+  assert.ok(desktopUi.includes('id="repositoryInstructionsInput"'));
+  assert.ok(desktopUi.includes('A native confirmation is required next'));
+  assert.match(desktopAppJs, /No GitHub write or push occurred/);
+  assert.match(desktopUi, /local actions you initiate here; Ask\/Read only gates requests from Arena/);
+  assert.ok(agentGuide.includes('check the selected repository root for `ARENA.md`'));
+  assert.ok(agentGuide.includes('No GitHub write or automatic push is available'));
 });
 
 test('legacy branch-based Pages root redirects to the styled product page', () => {

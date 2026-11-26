@@ -9,6 +9,7 @@
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./desktop-theme.css">
+  <link rel="stylesheet" href="./git-tools.css">
   <script src="./app.js" defer></script>
 </head>
 <body>
@@ -29,6 +30,7 @@
       <a class="nav-item active" href="#connection" aria-current="page"><span class="nav-icon">↗</span><span>Arena connection</span><span class="nav-dot" id="navConnectionDot"></span></a>
       <a class="nav-item" href="#approvals"><span class="nav-icon">◷</span><span>Approvals</span><span class="nav-count" id="navApprovalCount">0</span></a>
       <a class="nav-item" href="#workspace"><span class="nav-icon">▱</span><span>Workspace files</span></a>
+      <a class="nav-item" href="#gitRepository"><span class="nav-icon">⌘</span><span>Git & repository</span></a>
 
       <div class="sidebar-spacer"></div>
       <div class="sidebar-security">
@@ -36,7 +38,7 @@
         <strong>Local permission gate</strong>
         <p id="sidebarSecurityCopy">Arena can only request scoped actions. File writes, Git commits, and shell commands wait for you here.</p>
       </div>
-      <div class="sidebar-footer"><span class="mini-avatar">A</span><span><strong>Arena Local</strong><small>Desktop companion</small></span><span class="footer-version" id="appVersion">v0.1.3</span></div>
+      <div class="sidebar-footer"><span class="mini-avatar">A</span><span><strong>Arena Local</strong><small>Desktop companion</small></span><span class="footer-version" id="appVersion">v0.1.5</span></div>
     </aside>
 
     <main class="main-area">
@@ -109,6 +111,79 @@
             <p class="roblox-mcp-setup">Requires the latest Roblox Studio. In Studio, open <strong>Assistant → Manage MCP Servers</strong> and enable <strong>Studio as MCP server</strong> before connecting.</p>
           </section>
 
+          <section class="git-repository-card panel" id="gitRepository" aria-labelledby="gitRepositoryTitle">
+            <div class="card-heading">
+              <div><span class="section-eyebrow">LOCAL GIT · REPOSITORY WORKBENCH</span><h2 id="gitRepositoryTitle">Git & repository</h2></div>
+              <div class="git-heading-actions"><span class="step-mark git-status-badge" id="gitStatusBadge" data-state="loading">CHECKING</span><button class="refresh-button" id="refreshGitBtn" type="button" title="Refresh repository status" aria-label="Refresh repository status">↻</button></div>
+            </div>
+            <p class="git-intro">Inspect changes, stage selected files, review staged-only diffs, and make local commits. These are local actions you initiate here; Ask/Read only gates requests from Arena. Git tools stay at the selected workspace root. No action pushes to a remote.</p>
+            <div class="git-repository-overview">
+              <div class="git-overview-mark">⌘</div>
+              <div class="git-overview-copy"><strong id="gitBranchName">Checking repository…</strong><span id="gitSummaryText">Local repository status</span></div>
+              <div class="git-counts" id="gitCounts" hidden><span><b id="gitStagedCount">0</b> staged</span><span><b id="gitUnstagedCount">0</b> unstaged</span></div>
+            </div>
+            <div class="git-unavailable" id="gitUnavailable" hidden><p id="gitUnavailableText"></p><button class="secondary-button" id="initializeGitBtn" type="button" hidden>Initialize Git at workspace root</button></div>
+            <div class="git-repository-content" id="gitRepositoryContent" hidden>
+              <div class="git-section-heading"><div><strong>Working tree</strong><span id="gitSelectionHint">Select files to stage or unstage.</span></div><div class="git-selection-actions"><button class="secondary-button" id="gitStageSelectedBtn" type="button" disabled>Stage selected</button><button class="secondary-button" id="gitUnstageSelectedBtn" type="button" disabled>Unstage selected</button></div></div>
+              <div class="git-change-list" id="gitChangeList" aria-live="polite"><div class="git-empty-row">Loading changes…</div></div>
+              <p class="git-safety-copy" id="gitSafetyCopy">Git status and staging disable repository-configured clean/process filters. Protected credential paths stay hidden and cannot be staged here.</p>
+
+              <details class="git-disclosure" open>
+                <summary>Staged diff <span id="gitDiffSummary">0 files</span></summary>
+                <div class="git-code-actions"><button class="text-button" id="copyGitDiffBtn" type="button" disabled>Copy staged diff</button></div>
+                <pre class="git-code-block" id="gitStagedDiff">No staged changes.</pre>
+              </details>
+
+              <div class="git-commit-row">
+                <label class="sr-only" for="gitCommitMessage">Local commit message</label>
+                <input class="file-filter" id="gitCommitMessage" type="text" maxlength="300" autocomplete="off" placeholder="Commit message for staged changes">
+                <button class="primary-button" id="gitPreviewCommitBtn" type="button" disabled>Review local commit</button>
+              </div>
+              <p class="git-safety-copy">A complete staged diff preview and a separate local confirmation are required. Git hooks/signing are disabled. Commits are local only; there is no push button.</p>
+
+              <details class="git-disclosure">
+                <summary>Recent history <span id="gitHistorySummary">12 commits max</span></summary>
+                <pre class="git-code-block git-history-block" id="gitHistory">No commit history yet.</pre>
+              </details>
+
+              <details class="git-disclosure git-config-disclosure">
+                <summary>Repository configuration <span id="gitConfigSummary">local settings</span></summary>
+                <div class="git-config-grid">
+                  <div class="git-config-block">
+                    <strong>Commit identity</strong>
+                    <p>These values apply only to this repository, not your global Git settings.</p>
+                    <label for="gitUserName">Author name</label><input class="file-filter" id="gitUserName" maxlength="200" autocomplete="name" placeholder="Name for local commits">
+                    <label for="gitUserEmail">Author email</label><input class="file-filter" id="gitUserEmail" maxlength="200" autocomplete="email" placeholder="name@example.com">
+                    <button class="secondary-button" id="saveGitIdentityBtn" type="button">Save local identity</button>
+                  </div>
+                  <div class="git-config-block">
+                    <strong>HTTPS remote</strong>
+                    <p>Sets or updates a local remote URL. It does not fetch, push, or write to GitHub.</p>
+                    <label for="gitRemoteName">Remote name</label><input class="file-filter" id="gitRemoteName" maxlength="64" value="origin" autocomplete="off">
+                    <label for="gitRemoteUrl">Remote HTTPS URL</label><input class="file-filter" id="gitRemoteUrl" type="url" maxlength="2048" autocomplete="url" placeholder="https://github.com/owner/repository.git">
+                    <button class="secondary-button" id="saveGitRemoteBtn" type="button">Add / update remote</button>
+                  </div>
+                </div>
+                <div class="git-github-block">
+                  <div><strong>GitHub account · read-only lookup</strong><p>A token is sent only to GitHub’s API to verify the account and list repositories. Arena never receives it; it is never written into a remote URL or Git config.</p></div>
+                  <div class="git-token-row"><label class="sr-only" for="githubTokenInput">GitHub personal access token</label><input class="file-filter" id="githubTokenInput" type="password" autocomplete="new-password" maxlength="512" placeholder="Paste GitHub personal access token"><button class="secondary-button" id="saveGithubTokenBtn" type="button">Verify & save</button><button class="text-button" id="forgetGithubTokenBtn" type="button" hidden>Forget</button></div>
+                  <div class="git-token-status" id="githubTokenStatus" role="status" aria-live="polite">No GitHub token saved.</div>
+                  <div class="git-repo-picker"><label class="sr-only" for="githubRepositorySelect">GitHub repository</label><select id="githubRepositorySelect" disabled><option value="">Load your repositories</option></select><button class="secondary-button" id="loadGithubReposBtn" type="button" disabled>Load repositories</button><button class="secondary-button" id="setGithubOriginBtn" type="button" disabled>Set origin remote</button></div>
+                  <p class="git-safety-copy" id="githubRepositoryStatus">Repository lookup is read-only. Creating a remote changes only this computer’s local Git config.</p>
+                </div>
+              </details>
+
+              <details class="git-disclosure git-instructions-disclosure">
+                <summary>Repository-specific instructions <span id="gitInstructionsSummary">ARENA.md</span></summary>
+                <p class="git-config-copy" id="gitInstructionsNotice" hidden></p>
+                <p class="git-config-copy">Edit the local <code>ARENA.md</code> at this repository root. Keep guidance specific, non-secret, and under 24 KB. Saving writes this file locally and does not change your permission mode.</p>
+                <label class="sr-only" for="repositoryInstructionsInput">Repository-specific instructions</label>
+                <textarea id="repositoryInstructionsInput" spellcheck="true" maxlength="24576" placeholder="# Repository instructions&#10;&#10;Describe the conventions, commands, tests, and boundaries that matter for this project."></textarea>
+                <div class="git-instructions-actions"><span id="gitInstructionsBytes">0 / 24 KB</span><button class="secondary-button" id="saveRepositoryInstructionsBtn" type="button">Save ARENA.md</button></div>
+              </details>
+            </div>
+          </section>
+
           <section class="approval-section" id="approvals">
             <div class="section-title-row"><div><span class="section-eyebrow">LOCAL ACTION GATE</span><h2>Approval queue</h2></div><span class="approval-count" id="approvalCount">0</span></div>
             <div class="approval-queue" id="approvalQueue"><div class="empty-state"><span class="empty-orbit">◇</span><div><strong>Nothing needs approval</strong><p>When Arena requests a file write, Git commit, terminal command, or changing Roblox Studio tool, review it here first.</p></div></div></div>
@@ -164,6 +239,15 @@
     <div class="dialog-header"><div><span class="section-eyebrow">WORKSPACE FILE</span><h2 id="fileDialogTitle">File preview</h2></div><button class="icon-button" id="closeFileBtn" type="button" aria-label="Close file preview">×</button></div>
     <div class="file-preview-meta" id="filePreviewMeta"></div>
     <pre class="file-preview" id="filePreview"></pre>
+  </dialog>
+
+  <dialog class="file-dialog git-commit-dialog" id="gitCommitPreviewDialog" aria-labelledby="gitCommitDialogTitle">
+    <div class="dialog-header"><div><span class="section-eyebrow">LOCAL COMMIT REVIEW · STAGED ONLY</span><h2 id="gitCommitDialogTitle">Review staged commit</h2></div><button class="icon-button" id="closeGitCommitDialogBtn" type="button" aria-label="Close commit preview">×</button></div>
+    <div class="git-commit-preview-meta" id="gitCommitPreviewMeta"></div>
+    <pre class="git-commit-preview-files" id="gitCommitPreviewFiles"></pre>
+    <pre class="file-preview git-commit-preview-diff" id="gitCommitPreviewDiff"></pre>
+    <div class="git-commit-preview-actions"><button class="secondary-button" id="cancelGitCommitBtn" type="button">Cancel</button><button class="primary-button" id="confirmGitCommitBtn" type="button">Commit locally…</button></div>
+    <p class="git-safety-copy">A native confirmation is required next. This creates a local commit only; no push, hook, or signing operation is run.</p>
   </dialog>
 
   <dialog class="combined-unlock-dialog" id="fullNoAskUnlockDialog" aria-labelledby="fullNoAskUnlockTitle" aria-describedby="fullNoAskWarningText">
