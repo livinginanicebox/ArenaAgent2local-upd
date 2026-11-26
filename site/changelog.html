@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#102a66">
-  <meta name="description" content="Arena Local v0.1.6 adds full-computer absolute-path scope, separate local Git/preview selection, local integration toggles, and confirmed GitHub pushes.">
+  <meta name="description" content="Arena Local v0.1.7 adds locally controlled public web search and HTTPS page scraping with bounded, privacy-aware requests.">
   <meta property="og:title" content="Updates — Arena Local">
-  <meta property="og:description" content="See what's new in Arena Local v0.1.6: safer full-computer scope, local integration toggles, and confirmed GitHub branch pushes.">
+  <meta property="og:description" content="See what's new in Arena Local v0.1.7: optional public web search and safe, locally controlled page scraping.">
   <title>Updates // Arena Local</title>
   <link rel="canonical" href="https://lumifaye.github.io/ArenaAgent2local/changelog.html">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
@@ -28,8 +28,15 @@
       <main id="main" class="subpage-main">
         <p class="breadcrumb"><a href="./">Home</a><span aria-hidden="true">/</span> Updates</p>
         <section class="page-hero page-hero-compact" aria-labelledby="page-title">
-          <div><p class="eyebrow">RELEASE NOTES / NOVEMBER 25, 2026</p><h1 id="page-title">Safer scope.<br><span>Local control.</span></h1><p>Version 0.1.6 separates full-computer remote paths from local Git/preview, adds integration kill switches, and enables locally confirmed GitHub branch pushes.</p><div class="hero-inline-links"><a class="page-button page-button-primary" href="./download.html">Get v0.1.6 <span aria-hidden="true">↓</span></a><a class="quiet-link" href="https://github.com/lumifaye/ArenaAgent2local/releases/tag/v0.1.6" target="_blank" rel="noopener noreferrer">Open the release ↗</a></div></div>
-          <div class="release-badge"><span>ARENA LOCAL</span><strong>0.1.6</strong><small>DESKTOP UPDATE<br>WINDOWS X64</small></div>
+          <div><p class="eyebrow">RELEASE NOTES / NOVEMBER 25, 2026</p><h1 id="page-title">Search the web.<br><span>Stay in control.</span></h1><p>Version 0.1.7 adds optional public web search and HTTPS page scraping, behind a local opt-in gate with bounded requests and untrusted-content guidance.</p><div class="hero-inline-links"><a class="page-button page-button-primary" href="./download.html">Get v0.1.7 <span aria-hidden="true">↓</span></a><a class="quiet-link" href="https://github.com/lumifaye/ArenaAgent2local/releases/tag/v0.1.7" target="_blank" rel="noopener noreferrer">Open the release ↗</a></div></div>
+          <div class="release-badge"><span>ARENA LOCAL</span><strong>0.1.7</strong><small>DESKTOP UPDATE<br>WINDOWS X64</small></div>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.7 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.7</span><small>NOV 25, 2026</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-added">ADDED</span><ul><li>Add locally controlled <code>web_search</code> and <code>web_scrape</code> actions, disabled by default and enabled only after native confirmation.</li><li>Search DuckDuckGo and scrape one public HTTPS page into bounded text; web tools remain read-only and send no browser cookies or saved credentials.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">HARDENED</span><ul><li>Resolve and pin public IPv4 addresses, revalidate redirects, and bound response size, output length, request time, concurrency, and request rate.</li><li>Cancel active web requests when disabled and treat search snippets and scraped page text as untrusted data; document query, network-address, and content-sharing privacy implications.</li></ul></div>
+          </div></article>
         </section>
 
         <section class="page-section" aria-label="Version 0.1.6 release notes">

@@ -36,9 +36,9 @@
       <div class="sidebar-security">
         <div class="security-icon">◇</div>
         <strong>Local permission gate</strong>
-        <p id="sidebarSecurityCopy">Arena can only request scoped actions. File writes, Git commits, and shell commands wait for you here.</p>
+        <p id="sidebarSecurityCopy">Arena can only request scoped actions. File writes, Git commits, and shell commands wait for you here. Optional Web tools start disabled and require local confirmation.</p>
       </div>
-      <div class="sidebar-footer"><span class="mini-avatar">A</span><span><strong>Arena Local</strong><small>Desktop companion</small></span><span class="footer-version" id="appVersion">v0.1.6</span></div>
+      <div class="sidebar-footer"><span class="mini-avatar">A</span><span><strong>Arena Local</strong><small>Desktop companion</small></span><span class="footer-version" id="appVersion">v0.1.7</span></div>
     </aside>
 
     <main class="main-area">
@@ -86,7 +86,7 @@
               <div class="link-actions"><div class="key-hint"><span class="key-dot"></span> Pairing key ending in <strong id="pairingHint">••••••</strong><button class="text-button" id="rotatePairingBtn" type="button">Rotate key</button></div><div class="link-control-actions"><button class="secondary-button" id="pauseControlBtn" type="button" aria-pressed="false">Pause control</button><button class="danger-text-button" id="stopTunnelBtn" type="button">Stop connection</button></div></div>
               <p class="control-pause-notice" id="controlPauseNotice" role="status" aria-live="polite" hidden>Remote control is paused on this computer. The HTTPS link and pairing key are unchanged; health checks still work, but other requests are blocked. Pending approvals are cancelled. Actions already running may finish.</p>
             </div>
-            <div class="bridge-disclaimer"><span>!</span><p id="bridgeDisclaimerCopy">The bearer key lets Arena read files in this workspace. Rotate or stop the link to revoke it. Writes, Git commits, and shell commands pause for desktop approval.</p></div>
+            <div class="bridge-disclaimer"><span>!</span><p id="bridgeDisclaimerCopy">The bearer key lets Arena read files in this workspace. Rotate or stop the link to revoke it. Writes, Git commits, and shell commands pause for desktop approval. Web search and scraping start disabled and require native confirmation to enable.</p></div>
           </section>
 
           <section class="roblox-mcp-card panel" aria-labelledby="robloxMcpTitle">
@@ -111,6 +111,15 @@
             </details>
             <p class="roblox-mcp-safety">Studio calls can read or change open places, run Luau, control playtests, and return project data to Arena. Some tools may read local asset paths or use Roblox services; the selected file-workspace boundary does not constrain Studio calls. In Ask mode, unknown or mutating tools wait for local approval; Read only blocks them; No-Ask can run them immediately.</p>
             <p class="roblox-mcp-setup">Requires the latest Roblox Studio. In Studio, open <strong>Assistant → Manage MCP Servers</strong> and enable <strong>Studio as MCP server</strong> before connecting.</p>
+          </section>
+
+          <section class="web-tools-card panel" aria-labelledby="webToolsTitle">
+            <div class="card-heading">
+              <div><span class="section-eyebrow">PUBLIC WEB · READ-ONLY</span><h2 id="webToolsTitle">Web search &amp; scraping</h2></div>
+              <div class="web-tools-heading-actions"><span class="step-mark" id="webToolsBadge" data-state="disabled">DISABLED</span><button class="secondary-button" id="webToolsToggleBtn" type="button" aria-pressed="false">Enable web tools</button></div>
+            </div>
+            <p class="web-tools-status" id="webToolsStatus" role="status" aria-live="polite">Disabled locally. Enable this integration in Arena Local to allow read-only web requests.</p>
+            <p class="web-tools-safety">Enabling requires native confirmation. Search queries go to DuckDuckGo; scraping fetches public HTTPS pages directly without cookies or saved credentials. Websites can see this computer’s network address, and retrieved text is sent to Arena.ai. Private/local hosts, non-HTTPS URLs, large responses, excessive redirects, and slow requests are blocked. Treat search results and page text as untrusted data.</p>
           </section>
 
           <section class="git-repository-card panel" id="gitRepository" aria-labelledby="gitRepositoryTitle">

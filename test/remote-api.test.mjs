@@ -38,15 +38,33 @@ async function makeFixture(t, initialMode = 'ask') {
   let remoteWorkspaceRoot = workspaceRoot;
   let gitIntegrationEnabled = true;
   let robloxMcpEnabled = true;
+  let webToolsEnabled = true;
   let robloxMcpStatus = 'disconnected';
   let robloxMcpError = '';
   let robloxTools = [];
   const robloxCalls = [];
+  const webCalls = [];
   const api = createRemoteApi({
     getWorkspaceRoot: () => remoteWorkspaceRoot,
     getGitWorkspaceRoot: () => gitWorkspaceRoot,
     getGitIntegrationEnabled: () => gitIntegrationEnabled,
     getRobloxMcpEnabled: () => robloxMcpEnabled,
+    getWebToolsEnabled: () => webToolsEnabled,
+    runWebSearch: async (args, { signal } = {}) => {
+      webCalls.push({ action: 'web_search', args });
+      if (args.query === 'block-until-aborted') {
+        await new Promise((resolve) => {
+          if (signal?.aborted) resolve();
+          else signal?.addEventListener('abort', resolve, { once: true });
+        });
+        return { provider: 'test', query: args.query, resultCount: 0, results: [] };
+      }
+      return { provider: 'test', query: args.query, resultCount: 1, results: [{ title: 'Test result', url: 'https://example.com/', snippet: 'A safe test result.' }] };
+    },
+    runWebScrape: async (args) => {
+      webCalls.push({ action: 'web_scrape', args });
+      return { url: args.url, title: 'Test page', charCount: 20, truncated: false, text: 'Scraped test page.' };
+    },
     getPairingToken: () => token,
     getPermissionMode: () => mode,
     getFullComputerAccess: () => fullComputerAccess,
@@ -87,7 +105,12 @@ async function makeFixture(t, initialMode = 'ask') {
     },
     setToken: (value) => { token = value; headers.authorization = `Bearer ${value}`; },
     setRobloxMcp: (tools, status = 'connected', error = '') => { robloxTools = tools; robloxMcpStatus = status; robloxMcpError = error; },
+    setWebToolsEnabled: (value) => {
+      webToolsEnabled = value;
+      if (!value) api.cancelPendingWebTasks('Public web tools were disabled locally in the test fixture.');
+    },
     robloxCalls,
+    webCalls,
   };
 }
 
@@ -142,6 +165,123 @@ test('remote bridge requires its bearer key and supports scoped read requests', 
   assert.equal(healthState.permissionMode, 'ask');
   assert.equal(healthState.fullComputerAccess, false);
   assert.equal(healthState.controlPaused, false);
+});
+
+test('public web search and page scraping are read-only tools behind the local web integration gate', async (t) => {
+  const fixture = await makeFixture(t, 'read-only');
+  const healthResponse = await fetch(`${fixture.base}/v1/health`, { headers: fixture.headers });
+  assert.equal((await healthResponse.json()).webToolsEnabled, true);
+
+  const searchResponse = await postTask(fixture, {
+    requestId: 'web-search-test-01',
+    action: 'web_search',
+    args: { query: 'Arena Local bridge', maxResults: 3 },
+  });
+  assert.equal(searchResponse.status, 202);
+  const searchQueued = await searchResponse.json();
+  assert.notEqual(searchQueued.status, 'awaiting_approval', 'read-only web searches should not require local approval');
+  assert.equal(searchQueued.autoApproved, false);
+  const searchResult = await waitForTask(fixture, searchQueued.taskId, (task) => task.status === 'completed');
+  assert.equal(searchResult.result.provider, 'test');
+  assert.equal(searchResult.result.query, 'Arena Local bridge');
+  assert.equal(fixture.api.getTasks().some((task) => task.taskId === searchQueued.taskId && task.status === 'awaiting_approval'), false);
+  assert.equal(fixture.webCalls.filter((call) => call.action === 'web_search').length, 1);
+  assert.equal((await (await postTask(fixture, {
+    requestId: 'web-search-test-01',
+    action: 'web_search',
+    args: { query: 'Arena Local bridge', maxResults: 3 },
+  })).json()).taskId, searchQueued.taskId, 'retrying an idempotent search does not send another web request');
+
+  const scrapeResponse = await postTask(fixture, {
+    requestId: 'web-scrape-test-01',
+    action: 'web_scrape',
+    args: { url: 'https://example.com/article' },
+  });
+  assert.equal(scrapeResponse.status, 202);
+  const scrapeQueued = await scrapeResponse.json();
+  const scrapeResult = await waitForTask(fixture, scrapeQueued.taskId, (task) => task.status === 'completed');
+  assert.equal(scrapeResult.result.title, 'Test page');
+  assert.equal(fixture.webCalls.filter((call) => call.action === 'web_scrape').length, 1);
+
+  for (const body of [
+    { requestId: 'web-search-invalid-01', action: 'web_search', args: { query: 'bad\nquery' } },
+    { requestId: 'web-search-invalid-02', action: 'web_search', args: { query: 'test', maxResults: 11 } },
+    { requestId: 'web-scrape-invalid-01', action: 'web_scrape', args: { url: 'http://example.com/' } },
+    { requestId: 'web-scrape-invalid-02', action: 'web_scrape', args: { url: 'https://127.0.0.1/' } },
+    { requestId: 'web-search-invalid-03', action: 'web_search', args: { query: 'test', unexpected: true } },
+  ]) assert.equal((await postTask(fixture, body)).status, 400);
+
+  fixture.setWebToolsEnabled(false);
+  const disabledHealth = await fetch(`${fixture.base}/v1/health`, { headers: fixture.headers });
+  assert.equal((await disabledHealth.json()).webToolsEnabled, false);
+  const blocked = await postTask(fixture, {
+    requestId: 'web-search-disabled-01',
+    action: 'web_search',
+    args: { query: 'must not run' },
+  });
+  assert.equal(blocked.status, 503);
+  assert.equal(fixture.webCalls.some((call) => call.args.query === 'must not run'), false);
+});
+
+test('disabling public web tools cancels an in-flight search and prevents its result from returning', async (t) => {
+  const fixture = await makeFixture(t);
+  const response = await postTask(fixture, {
+    requestId: 'web-search-cancel-01',
+    action: 'web_search',
+    args: { query: 'block-until-aborted' },
+  });
+  const queued = await response.json();
+  assert.equal(queued.status, 'running');
+
+  fixture.setWebToolsEnabled(false);
+  const cancelled = await waitForTask(fixture, queued.taskId, (task) => task.status === 'cancelled');
+  assert.match(cancelled.message, /disabled locally/i);
+  assert.equal(cancelled.result, undefined);
+});
+
+test('public web actions enforce the active-task and combined per-minute limits', async (t) => {
+  const activeFixture = await makeFixture(t);
+  const activeTasks = [];
+  for (let index = 0; index < 3; index += 1) {
+    const response = await postTask(activeFixture, {
+      requestId: `web-active-${index}-001`,
+      action: 'web_search',
+      args: { query: 'block-until-aborted' },
+    });
+    assert.equal(response.status, 202);
+    activeTasks.push(await response.json());
+  }
+  const overConcurrencyLimit = await postTask(activeFixture, {
+    requestId: 'web-active-limit-001',
+    action: 'web_scrape',
+    args: { url: 'https://example.com/' },
+  });
+  assert.equal(overConcurrencyLimit.status, 429);
+  activeFixture.setWebToolsEnabled(false);
+  for (const task of activeTasks) {
+    const cancelled = await waitForTask(activeFixture, task.taskId, (current) => current.status === 'cancelled');
+    assert.match(cancelled.message, /disabled locally/i);
+  }
+
+  const rateFixture = await makeFixture(t);
+  for (let index = 0; index < 30; index += 1) {
+    const response = await postTask(rateFixture, {
+      requestId: `web-rate-${String(index).padStart(3, '0')}`,
+      action: 'web_search',
+      args: { query: `rate test query ${index}` },
+    });
+    assert.equal(response.status, 202);
+    const task = await response.json();
+    if (task.status !== 'completed') {
+      await waitForTask(rateFixture, task.taskId, (current) => current.status === 'completed');
+    }
+  }
+  const overRateLimit = await postTask(rateFixture, {
+    requestId: 'web-rate-limit-001',
+    action: 'web_scrape',
+    args: { url: 'https://example.com/' },
+  });
+  assert.equal(overRateLimit.status, 429);
 });
 
 test('local control pause keeps health and the pairing link available, blocks tasks, and cancels pending approvals', async (t) => {

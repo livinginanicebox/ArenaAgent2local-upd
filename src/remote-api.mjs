@@ -9,6 +9,7 @@ import {
   previewWorkspaceWrite,
 } from './workspace.mjs';
 import { isRobloxReadOnlyTool } from './roblox-mcp-client.mjs';
+import { searchWeb, scrapeWeb, validatePublicHttpsUrl } from './web-tools.mjs';
 import {
   executeGitCommit,
   executeLocalReadTool,
@@ -23,15 +24,18 @@ const MAX_RETAINED_TASKS = 120;
 const TASK_TTL_MS = 30 * 60 * 1_000;
 const APPROVAL_TTL_MS = 10 * 60 * 1_000;
 const RATE_LIMIT_PER_MINUTE = 240;
+const WEB_RATE_LIMIT_PER_MINUTE = 30;
+const MAX_ACTIVE_WEB_TASKS = 3;
 const MAX_ROBLOX_ARGS_BYTES = 256 * 1024;
 const MAX_ROBLOX_STUDIO_ID_LENGTH = 512;
 const ROBLOX_STUDIO_DISCOVERY_TOOL = 'list_roblox_studios';
 const CONTROL_PAUSED_MESSAGE = 'Remote control is paused on this computer. The link and pairing key are unchanged; only health checks are available until the user resumes control locally.';
 const ACTIONS = new Set([
   'list_files', 'read_file', 'search_text', 'write_file', 'run_command', 'roblox_tool',
-  'git_status', 'git_diff', 'git_log', 'git_commit', 'list_processes',
+  'git_status', 'git_diff', 'git_log', 'git_commit', 'list_processes', 'web_search', 'web_scrape',
 ]);
 const GIT_ACTIONS = new Set(['git_status', 'git_diff', 'git_log', 'git_commit']);
+const WEB_ACTIONS = new Set(['web_search', 'web_scrape']);
 const REQUEST_ID_PATTERN = /^[a-zA-Z0-9._:-]{8,100}$/;
 
 class HttpError extends Error {
@@ -148,6 +152,23 @@ function validateTaskBody(body) {
       }
       args = { limit: input.limit ?? 20 };
       break;
+    case 'web_search': {
+      allowedKeys = ['query', 'maxResults'];
+      const query = boundedString(input.query, 'query', 500).trim();
+      if (/[\u0000-\u001f\u007f]/.test(query)) throw new HttpError(400, 'query cannot contain control characters.');
+      if (input.maxResults !== undefined && (!Number.isInteger(input.maxResults) || input.maxResults < 1 || input.maxResults > 10)) {
+        throw new HttpError(400, 'maxResults must be an integer from 1 to 10.');
+      }
+      args = { query, maxResults: input.maxResults ?? 5 };
+      break;
+    }
+    case 'web_scrape': {
+      allowedKeys = ['url'];
+      const rawUrl = boundedString(input.url, 'url', 2_048);
+      try { args = { url: validatePublicHttpsUrl(rawUrl).href }; }
+      catch (error) { throw new HttpError(400, error.message || 'url must be a public HTTPS URL.'); }
+      break;
+    }
     case 'git_commit': {
       allowedKeys = ['message'];
       const message = boundedString(input.message, 'message', 500).trim();
@@ -211,6 +232,8 @@ function summarizeResult(action, result) {
   if (action === 'git_log') return `${result.count ?? 0} recent commit(s).`;
   if (action === 'git_commit') return `Created local commit ${result.commit || ''} from ${result.fileCount ?? 0} staged file(s).`;
   if (action === 'list_processes') return `${result.processes?.length ?? 0} process(es) listed${result.truncated ? ' (truncated)' : ''}.`;
+  if (action === 'web_search') return `${result.resultCount ?? result.results?.length ?? 0} web search result(s) from ${result.provider || 'the web'}${result.truncated ? ' · output may be truncated' : ''}.`;
+  if (action === 'web_scrape') return `Scraped ${result.charCount ?? 0} characters from ${String(result.title || 'the public page').slice(0, 120)}${result.truncated ? ' · text truncated' : ''}.`;
   if (action === 'roblox_tool') return result.isError ? 'Roblox Studio MCP tool reported an error.' : 'Roblox Studio MCP tool completed.';
   return 'Complete.';
 }
@@ -297,6 +320,9 @@ export function createRemoteApi({
   getGitWorkspaceRoot = getWorkspaceRoot,
   getGitIntegrationEnabled = () => true,
   getRobloxMcpEnabled = () => true,
+  getWebToolsEnabled = () => false,
+  runWebSearch = searchWeb,
+  runWebScrape = scrapeWeb,
   getPairingToken,
   getPermissionMode,
   getFullComputerAccess = () => false,
@@ -316,6 +342,8 @@ export function createRemoteApi({
   let controlEpoch = 0;
   let rateWindowStart = Date.now();
   let rateCount = 0;
+  let webRateWindowStart = Date.now();
+  let webRateCount = 0;
 
   function changed() {
     try { onUpdate(); } catch { /* UI may not be ready during startup/shutdown. */ }
@@ -386,6 +414,16 @@ export function createRemoteApi({
     if (rateCount > RATE_LIMIT_PER_MINUTE) throw new HttpError(429, 'Rate limit reached. Wait a minute and retry.');
   }
 
+  function consumeWebRateLimit() {
+    const now = Date.now();
+    if (now - webRateWindowStart >= 60_000) {
+      webRateWindowStart = now;
+      webRateCount = 0;
+    }
+    webRateCount += 1;
+    if (webRateCount > WEB_RATE_LIMIT_PER_MINUTE) throw new HttpError(429, 'Web tools are limited to 30 requests per minute. Wait before searching or scraping again.');
+  }
+
   function setStatus(task, status, fields = {}) {
     task.status = status;
     task.updatedAt = new Date().toISOString();
@@ -399,6 +437,17 @@ export function createRemoteApi({
       if (task.action === 'roblox_tool') {
         if (!getRobloxMcpEnabled()) throw new Error('Roblox Studio MCP was disabled locally before this action could run.');
         result = await callRobloxMcpTool(task.args.name, task.args.arguments);
+      } else if (WEB_ACTIONS.has(task.action)) {
+        if (!getWebToolsEnabled()) throw new Error('Web tools were disabled locally before this action could run.');
+        const signal = task.abortController?.signal;
+        result = task.action === 'web_search'
+          ? await runWebSearch(task.args, { signal })
+          : await runWebScrape(task.args, { signal });
+        if (task.status === 'cancelled') return;
+        if (!getWebToolsEnabled()) {
+          denyTask(task, 'Web tools were disabled locally before this result could be returned.', 'cancelled');
+          return;
+        }
       } else if (GIT_ACTIONS.has(task.action)) {
         if (!getGitIntegrationEnabled()) throw new Error('Local Git integration was disabled before this action could run.');
         const gitRoot = getGitWorkspaceRoot();
@@ -426,8 +475,11 @@ export function createRemoteApi({
         error: undefined,
       });
     } catch (error) {
+      if (task.status === 'cancelled') return;
       const message = error.message || 'Local action failed.';
       setStatus(task, 'error', { error: message, resultSummary: task.autoApproved ? `AUTO-APPROVED · ${message}` : message });
+    } finally {
+      task.abortController = null;
     }
   }
 
@@ -518,6 +570,9 @@ export function createRemoteApi({
       if (!getGitIntegrationEnabled()) throw new HttpError(503, 'Local Git integration is disabled in Arena Local.');
       if (!getGitWorkspaceRoot()) throw new HttpError(503, 'No local Git workspace is selected. Choose a repository in Arena Local before requesting Git actions.');
     }
+    if (WEB_ACTIONS.has(request.action) && !getWebToolsEnabled()) {
+      throw new HttpError(503, 'Public web tools are disabled locally in Arena Local.');
+    }
     const remoteWorkspaceRoot = getWorkspaceRoot();
     if (getFullComputerAccess() && !remoteWorkspaceRoot && ['list_files', 'read_file', 'search_text', 'write_file'].includes(request.action)
       && !path.isAbsolute(request.args.path || '')) {
@@ -541,6 +596,12 @@ export function createRemoteApi({
       const existing = tasks.get(existingId);
       if (existing && existing.requestFingerprint !== requestFingerprint) throw new HttpError(409, 'requestId was already used for a different action.');
       if (existing) return existing;
+    }
+    if (WEB_ACTIONS.has(request.action)) {
+      const activeWebCount = [...tasks.values()].filter((task) => WEB_ACTIONS.has(task.action)
+        && ['running', 'preparing', 'awaiting_approval'].includes(task.status)).length;
+      if (activeWebCount >= MAX_ACTIVE_WEB_TASKS) throw new HttpError(429, 'Too many web requests are already running. Wait for them to finish before starting another.');
+      consumeWebRateLimit();
     }
 
     let robloxPermission = null;
@@ -592,6 +653,7 @@ export function createRemoteApi({
       error: undefined,
       message: undefined,
       preview: null,
+      abortController: WEB_ACTIONS.has(request.action) ? new AbortController() : null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       approvalTimeout: null,
@@ -697,6 +759,16 @@ export function createRemoteApi({
     changed();
   }
 
+  function cancelPendingWebTasks(reason = 'Public web tools were disabled locally.') {
+    for (const task of tasks.values()) {
+      if (WEB_ACTIONS.has(task.action) && ['running', 'preparing', 'awaiting_approval'].includes(task.status)) {
+        task.abortController?.abort();
+        denyTask(task, reason, 'cancelled');
+      }
+    }
+    changed();
+  }
+
   function getDesktopTasks() {
     trimTasks();
     return sortNewest([...tasks.values()]).slice(0, 30).map(safeDesktopTask);
@@ -723,6 +795,7 @@ export function createRemoteApi({
         workspace: getWorkspaceRoot() ? 'selected' : 'none',
         gitWorkspaceSelected: Boolean(getGitWorkspaceRoot()),
         gitIntegrationEnabled: Boolean(getGitIntegrationEnabled()),
+        webToolsEnabled: Boolean(getWebToolsEnabled()),
         permissionMode: getPermissionMode(),
         fullComputerAccess: Boolean(getFullComputerAccess()),
         controlPaused,
@@ -791,6 +864,7 @@ export function createRemoteApi({
     cancelPendingChanges,
     cancelPendingRobloxTasks,
     cancelPendingGitTasks,
+    cancelPendingWebTasks,
     clearApprovedActions,
     setControlPaused,
     isControlPaused: () => controlPaused,

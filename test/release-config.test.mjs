@@ -16,6 +16,7 @@ const desktopTheme = await readFile(new URL('../public/desktop-theme.css', impor
 const desktopAppJs = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
 const desktopPreload = await readFile(new URL('../desktop/preload.cjs', import.meta.url), 'utf8');
 const remoteApi = await readFile(new URL('../src/remote-api.mjs', import.meta.url), 'utf8');
+const webTools = await readFile(new URL('../src/web-tools.mjs', import.meta.url), 'utf8');
 const localTools = await readFile(new URL('../src/local-tools.mjs', import.meta.url), 'utf8');
 const githubApi = await readFile(new URL('../src/github-api.mjs', import.meta.url), 'utf8');
 
@@ -56,6 +57,31 @@ test('copied Arena prompt fetches the public guide without exposing the pairing 
   assert.match(agentGuide, /Never use `write_file` to escape the workspace/);
   assert.match(desktopMain, /File actions are confined to the selected workspace/);
   assert.match(desktopMain, /EXTREMELY DANGEROUS FULL-COMPUTER ACCESS IS ENABLED/);
+});
+
+test('public web search and scraping are locally opt-in, bounded to public HTTPS, and documented as untrusted', () => {
+  assert.match(desktopMain, /let webToolsEnabled = false/);
+  assert.match(desktopMain, /arena:set-web-tools-enabled/);
+  assert.match(desktopMain, /getWebToolsEnabled: \(\) => webToolsEnabled/);
+  assert.match(desktopMain, /Web search sends each query to DuckDuckGo/);
+  assert.match(desktopPreload, /setWebToolsEnabled: invoke\('arena:set-web-tools-enabled'\)/);
+  assert.match(desktopAppJs, /function updateWebToolsPanel\(/);
+  assert.match(desktopAppJs, /setWebToolsEnabled\(enabled\)/);
+  assert.ok(desktopUi.includes('id="webToolsToggleBtn"'));
+  assert.ok(desktopUi.includes('id="webToolsBadge"'));
+  assert.match(remoteApi, /'web_search', 'web_scrape'/);
+  assert.match(remoteApi, /WEB_RATE_LIMIT_PER_MINUTE = 30/);
+  assert.match(remoteApi, /MAX_ACTIVE_WEB_TASKS = 3/);
+  assert.match(remoteApi, /cancelPendingWebTasks/);
+  assert.match(webTools, /https:\/\/html\.duckduckgo\.com\/html\//);
+  assert.match(webTools, /https\.request/);
+  assert.match(webTools, /resolvePublicIpv4/);
+  assert.match(webTools, /MAX_SCRAPE_RESPONSE_BYTES = 2_000_000/);
+  assert.match(webTools, /MAX_SCRAPED_TEXT_CHARS = 30_000/);
+  assert.match(webTools, /MAX_REDIRECTS = 4/);
+  assert.match(agentGuide, /`webToolsEnabled: true`/);
+  assert.match(agentGuide, /untrusted data/);
+  assert.match(agentGuide, /sends the query to DuckDuckGo/);
 });
 
 test('full-computer access is opt-in and temporary; combining with No-Ask requires a local timed unlock', () => {

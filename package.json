@@ -1,8 +1,8 @@
 {
   "name": "arena-local-desktop",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
-  "description": "A permissioned desktop bridge for Arena AI Bash requests, scoped files, a local Git and GitHub repository workbench, and Roblox Studio MCP.",
+  "description": "A permissioned desktop bridge for Arena Bash requests, scoped files, optional public web search and scraping, a local Git and GitHub workbench, and Roblox Studio MCP.",
   "type": "module",
   "main": "desktop/main.mjs",
   "engines": {

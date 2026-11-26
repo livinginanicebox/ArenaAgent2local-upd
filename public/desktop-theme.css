@@ -334,6 +334,16 @@ body::before {
   .link-actions { align-items: flex-start; flex-direction: column; }
 }
 
+.web-tools-card { display: grid; gap: 11px; padding: 19px 21px; border-color: rgba(54, 199, 255, .24); background: linear-gradient(145deg, rgba(15, 43, 70, .88), rgba(8, 20, 39, .98)); }
+.web-tools-card .card-heading { margin: 0; }
+.web-tools-card .card-heading h2 { margin: 4px 0 0; color: #e7f3ff; font-size: 16px; }
+.web-tools-heading-actions { display: flex; align-items: center; gap: 9px; }
+.web-tools-heading-actions .secondary-button { min-height: 27px; padding: 0 8px; font-size: 8px; white-space: nowrap; }
+.web-tools-heading-actions .step-mark { color: #9bb0c6; }
+.web-tools-heading-actions .step-mark[data-state="enabled"] { color: #a7f0d1; border-color: rgba(106, 230, 177, .3); }
+.web-tools-status { margin: 0; padding: 8px 11px; border: 1px solid rgba(120, 176, 218, .2); border-radius: 4px; color: #c6d7e7; background: rgba(5, 17, 34, .58); font-size: 9px; line-height: 1.5; }
+.web-tools-status[data-state="enabled"] { color: #a7f0d1; border-color: rgba(106, 230, 177, .3); }
+.web-tools-safety { margin: 0; color: #9eb5cc; font-size: 9px; line-height: 1.6; }
 .roblox-mcp-card { display: grid; gap: 12px; padding: 19px 21px; border-color: rgba(105, 195, 240, .25); background: linear-gradient(145deg, rgba(18, 41, 71, .91), rgba(8, 20, 39, .98)); }
 .roblox-mcp-card .card-heading { margin: 0; }
 .roblox-mcp-card .card-heading h2 { margin: 4px 0 0; color: #e7f3ff; font-size: 16px; }
@@ -370,6 +380,9 @@ body::before {
 @keyframes mcp-pulse { 50% { opacity: .5; box-shadow: 0 0 0 6px rgba(255, 205, 104, .06); } }
 
 @media (max-width: 680px) {
+  .web-tools-card { padding: 15px 13px; }
+  .web-tools-card .card-heading h2 { font-size: 13px; }
+  .web-tools-heading-actions { flex-wrap: wrap; justify-content: flex-end; }
   .roblox-mcp-card { padding: 15px 13px; }
   .roblox-mcp-card .card-heading h2 { font-size: 13px; }
   .roblox-mcp-actions { flex-wrap: wrap; }

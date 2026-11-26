@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('arenaLocal', {
   connectRobloxMcp: invoke('arena:connect-roblox-mcp'),
   disconnectRobloxMcp: invoke('arena:disconnect-roblox-mcp'),
   setRobloxMcpEnabled: invoke('arena:set-roblox-mcp-enabled'),
+  setWebToolsEnabled: invoke('arena:set-web-tools-enabled'),
   rotatePairingToken: invoke('arena:rotate-pairing-token'),
   copyArenaInstructions: invoke('arena:copy-instructions'),
   copyTunnelUrl: invoke('arena:copy-tunnel-url'),

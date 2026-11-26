@@ -18,6 +18,7 @@ let combinedUnlockStarting = false;
 let controlPauseBusy = false;
 let gitToggleBusy = false;
 let robloxToggleBusy = false;
+let webToggleBusy = false;
 let gitPushBusy = false;
 let gitDashboard = null;
 let githubRepositories = [];
@@ -89,6 +90,9 @@ const els = {
   connectRobloxMcpBtn: $('#connectRobloxMcpBtn'),
   disconnectRobloxMcpBtn: $('#disconnectRobloxMcpBtn'),
   robloxMcpToggleBtn: $('#robloxMcpToggleBtn'),
+  webToolsBadge: $('#webToolsBadge'),
+  webToolsStatus: $('#webToolsStatus'),
+  webToolsToggleBtn: $('#webToolsToggleBtn'),
   gitIntegrationToggleBtn: $('#gitIntegrationToggleBtn'),
   gitPushBtn: $('#gitPushBtn'),
   refreshGitBtn: $('#refreshGitBtn'),
@@ -209,6 +213,7 @@ function applyState(state) {
   updatePermissionCopy();
   updateConnectionPanel();
   updateRobloxMcpPanel();
+  updateWebToolsPanel();
   updateGitIntegrationPanel();
   updateGithubAccountPanel();
   updateGitSelectionControls();
@@ -355,6 +360,22 @@ function updateRobloxMcpPanel() {
     item.append(makeElement('small', '', description ? `${permissionLabel} · ${description}` : permissionLabel));
     els.robloxMcpToolsList.append(item);
   }
+}
+
+function updateWebToolsPanel() {
+  const enabled = appState?.webToolsEnabled === true;
+  els.webToolsToggleBtn.textContent = enabled ? 'Disable web tools' : 'Enable web tools';
+  els.webToolsToggleBtn.setAttribute('aria-pressed', String(enabled));
+  els.webToolsToggleBtn.disabled = webToggleBusy;
+  els.webToolsToggleBtn.title = enabled
+    ? 'Block web search and scraping requests from Arena.'
+    : 'Enable public web search and scraping after native confirmation.';
+  els.webToolsBadge.textContent = enabled ? 'ENABLED' : 'DISABLED';
+  els.webToolsBadge.dataset.state = enabled ? 'enabled' : 'disabled';
+  els.webToolsStatus.dataset.state = enabled ? 'enabled' : 'disabled';
+  els.webToolsStatus.textContent = enabled
+    ? 'Enabled locally · web_search uses DuckDuckGo, and web_scrape fetches public HTTPS pages. Requests are read-only and bounded.'
+    : 'Disabled locally · remote web actions are blocked until you enable this integration here.';
 }
 
 function updateGitIntegrationPanel() {
@@ -976,8 +997,8 @@ function updatePermissionCopy() {
     : noAsk
       ? 'VERY DANGEROUS: Arena can write files, commit staged Git changes, run shell commands, and change Roblox Studio without approval.'
       : readOnly
-        ? 'File reads, Git inspection, process names/PIDs, and known read-only Studio tools are available. Writes, Git commits, commands, and other Studio tools are blocked.'
-        : 'Arena can only request scoped actions. File writes, Git commits, shell commands, and changing Roblox Studio tools wait for you here.';
+        ? 'File reads, Git inspection, process names/PIDs, locally enabled Web tools, and known read-only Studio tools are available. Writes, Git commits, commands, and other Studio tools are blocked.'
+        : 'Arena can only request scoped actions. File writes, Git commits, shell commands, and changing Roblox Studio tools wait for you here. Web search and scraping are read-only and require local enablement.';
   els.bridgeDisclaimerCopy.textContent = controlPaused
     ? 'Remote control is paused locally. Only health checks work; pending approvals were cancelled. Actions already running may finish. The link and pairing key are unchanged.'
     : fullComputerAccess
@@ -985,10 +1006,10 @@ function updatePermissionCopy() {
         ? 'EXTREMELY DANGEROUS: remote file requests require explicit absolute paths; file writes, Git commits, shell commands, and mutating Studio tools run without approval. Private data may be sent to Arena.ai. Git/preview need a separate local folder; GitHub push remains a separate local confirmation.'
         : 'EXTREMELY DANGEROUS: remote file requests require explicit absolute paths and may read private or credential files; requested contents are sent to Arena.ai. Writes and Studio tools follow your permission mode; Git/preview require a separate local folder.'
       : noAsk
-      ? 'VERY DANGEROUS: writes, Git commits, shell commands, and mutating Roblox Studio tools execute immediately without desktop approval. Stop the link, rotate the key, or switch to Ask or Read only to disable this mode.'
+      ? 'VERY DANGEROUS: writes, Git commits, shell commands, and mutating Roblox Studio tools execute immediately without desktop approval. Web search/scrape remain read-only and require the separate local Web tools toggle. Stop the link, rotate the key, or switch to Ask or Read only to disable this mode.'
       : readOnly
-        ? 'The bearer key lets Arena read files in this workspace. File writes, Git commits, shell commands, and mutating Roblox Studio tools are blocked in Read only mode.'
-        : 'The bearer key lets Arena read files in this workspace. Writes, Git commits, commands, and mutating Roblox Studio tools pause for desktop approval unless you enable VERY DANGEROUS no-ask mode.';
+        ? 'The bearer key lets Arena read files in this workspace. File writes, Git commits, shell commands, and mutating Roblox Studio tools are blocked in Read only mode. Web tools remain local-toggle-only.'
+        : 'The bearer key lets Arena read files in this workspace. Writes, Git commits, commands, and mutating Roblox Studio tools pause for desktop approval unless you enable VERY DANGEROUS no-ask mode. Web queries and scraped text can be sent outside this computer only after locally enabling Web tools.';
   els.permissionDescription.textContent = controlPaused
     ? 'Remote control is paused; only health checks are accepted. Your selected permission mode applies again when you resume.'
     : fullComputerAccess
@@ -1017,7 +1038,7 @@ function updatePermissionCopy() {
     ? 'Remote control is paused; no new requests are accepted. The configured No-Ask access returns if you resume locally. Pending approvals are cancelled; actions already running may finish.'
     : fullComputerAccess
       ? 'Full-computer remote file requests require explicit absolute paths. Automatic writes and shell commands run without approval; Git requires a separate local repository. Stop the link, rotate the key, or close Arena Local to disable this mode.'
-      : 'Arena file writes, Git commits, terminal commands, and mutating Roblox Studio tools execute immediately. Shell commands can reach files outside the selected workspace. Stop the link, rotate the key, choose a different folder, switch to Ask or Read only, or close Arena Local to disable this mode.';
+      : 'Arena file writes, Git commits, terminal commands, and mutating Roblox Studio tools execute immediately. Shell commands can reach files outside the selected workspace. Web search and scraping remain read-only and require the separate local toggle. Stop the link, rotate the key, choose a different folder, switch to Ask or Read only, or close Arena Local to disable this mode.';
   els.dangerModeBanner.hidden = !noAsk;
   updateScopePanel();
 }
@@ -1035,6 +1056,11 @@ function taskTitle(task) {
     case 'git_log': return `Git log · ${args.limit || 20} commits`;
     case 'git_commit': return `Git commit · ${String(args.message || '').slice(0, 45)}`;
     case 'list_processes': return 'List running processes';
+    case 'web_search': return `Web search · “${String(args.query || '').slice(0, 60)}”`;
+    case 'web_scrape': {
+      try { return `Scrape page · ${new URL(args.url).hostname}`; }
+      catch { return 'Scrape public web page'; }
+    }
     case 'roblox_tool': return `Roblox Studio · ${args.name || 'MCP tool'}`;
     default: return task.action || 'Remote request';
   }
@@ -1405,6 +1431,28 @@ async function toggleRobloxMcpIntegration() {
   }
 }
 
+async function toggleWebTools() {
+  const enabled = appState?.webToolsEnabled !== true;
+  webToggleBusy = true;
+  updateWebToolsPanel();
+  try {
+    const state = await window.arenaLocal.setWebToolsEnabled(enabled);
+    applyState(state);
+    if (state.webToolsEnabled !== enabled) {
+      showToast('Web tools remain disabled; no web requests were enabled.');
+    } else if (enabled) {
+      showToast('Public web tools enabled. Queries and retrieved page text can be sent outside this computer.');
+    } else {
+      showToast('Web tools disabled locally; active web requests were cancelled.');
+    }
+  } catch (error) {
+    showToast(error.message || 'Could not change web tools availability.', true);
+  } finally {
+    webToggleBusy = false;
+    updateWebToolsPanel();
+  }
+}
+
 async function toggleGitIntegration() {
   const enabled = appState?.gitIntegrationEnabled === false;
   gitToggleBusy = true;
@@ -1737,6 +1785,7 @@ $('#stopTunnelBtn').addEventListener('click', stopTunnel);
 els.connectRobloxMcpBtn.addEventListener('click', connectRobloxMcp);
 els.disconnectRobloxMcpBtn.addEventListener('click', disconnectRobloxMcp);
 els.robloxMcpToggleBtn.addEventListener('click', toggleRobloxMcpIntegration);
+els.webToolsToggleBtn.addEventListener('click', toggleWebTools);
 els.gitIntegrationToggleBtn.addEventListener('click', toggleGitIntegration);
 els.gitPushBtn.addEventListener('click', pushGitBranch);
 els.refreshGitBtn.addEventListener('click', () => loadGitDashboard());
