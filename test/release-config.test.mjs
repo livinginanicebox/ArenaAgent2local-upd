@@ -7,6 +7,7 @@ const releaseWorkflow = await readFile(new URL('../.github/workflows/windows-rel
 const pagesWorkflow = await readFile(new URL('../.github/workflows/pages.yml', import.meta.url), 'utf8');
 const siteHtml = await readFile(new URL('../site/index.html', import.meta.url), 'utf8');
 const downloadPage = await readFile(new URL('../site/download.html', import.meta.url), 'utf8');
+const changelogPage = await readFile(new URL('../site/changelog.html', import.meta.url), 'utf8');
 const siteScript = await readFile(new URL('../site/site.js', import.meta.url), 'utf8');
 const legacyPagesRedirect = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const agentGuide = (await readFile(new URL('../site/agents.md', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
@@ -37,6 +38,42 @@ test('desktop control center uses the website electric-blue retro theme', () => 
   assert.match(desktopTheme, /font-family:\s*Tahoma, Verdana/);
   assert.match(desktopTheme, /linear-gradient\(180deg, #4fb8ed/);
   assert.match(desktopTheme, /@media \(max-width: 680px\)/);
+});
+
+test('desktop app element registry covers all references and matches the HTML', () => {
+  const registrySource = desktopAppJs.match(/const els = \{([\s\S]*?)\n\};/);
+  assert.ok(registrySource, 'Desktop app should define its DOM element registry.');
+  const entries = [...registrySource[1].matchAll(/^\s*(\w+):\s*\$\('#([^']+)'\),?\s*$/gm)];
+  const registry = new Map(entries.map(([, name, id]) => [name, id]));
+  assert.equal(registry.size, entries.length, 'DOM registry keys should be unique.');
+
+  const referenced = new Set([...desktopAppJs.matchAll(/\bels\.(\w+)/g)].map(([, name]) => name));
+  assert.deepEqual([...referenced].filter((name) => !registry.has(name)), [], 'Every els reference must be registered.');
+  for (const [name, id] of registry) {
+    assert.ok(desktopUi.includes(`id="${id}"`), `DOM element ${name} should exist in the desktop HTML.`);
+  }
+});
+
+test('updates page shows release publication dates and links to versioned installer downloads', () => {
+  const releaseDates = {
+    '0.1.8': 'NOV 25, 2026',
+    '0.1.7': 'NOV 26, 2026',
+    '0.1.6': 'NOV 26, 2026',
+    '0.1.5': 'NOV 26, 2026',
+    '0.1.4': 'NOV 26, 2026',
+    '0.1.3': 'NOV 25, 2026',
+    '0.1.2': 'NOV 25, 2026',
+    '0.1.1': 'NOV 25, 2026',
+  };
+  for (const [version, date] of Object.entries(releaseDates)) {
+    const start = changelogPage.indexOf(`<section class="page-section" aria-label="Version ${version} release notes">`);
+    assert.notEqual(start, -1, `Updates page should include release notes for ${version}.`);
+    const end = changelogPage.indexOf('</section>', start);
+    const entry = changelogPage.slice(start, end);
+    assert.ok(entry.includes(`<small>${date}</small>`), `${version} should show its actual publication date.`);
+    const installerUrl = `https://github.com/lumifaye/ArenaAgent2local/releases/download/v${version}/Arena-Local-Setup.exe`;
+    assert.ok(entry.includes(installerUrl), `${version} should link directly to its own installer.`);
+  }
 });
 
 test('copied Arena prompt fetches the public guide without exposing the pairing key', () => {

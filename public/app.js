@@ -41,7 +41,7 @@ const els = {
   liveConnection: $('#liveConnection'),
   connectionLiveTag: $('#connectionLiveTag'),
   pauseControlBtn: $('#pauseControlBtn'),
-  controlPauseNotice: $('#controlPauseNotice'),
+  pauseControlNotice: $('#controlPauseNotice'),
   ngrokTokenInput: $('#ngrokTokenInput'),
   saveNgrokTokenBtn: $('#saveNgrokTokenBtn'),
   ngrokTokenStatus: $('#ngrokTokenStatus'),
