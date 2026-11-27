@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('arenaLocal', {
   completeFullComputerNoAskUnlock: invoke('arena:complete-full-computer-no-ask-unlock'),
   cancelFullComputerNoAskUnlock: invoke('arena:cancel-full-computer-no-ask-unlock'),
   approveTask: invoke('arena:approve-task'),
+  openArenaChat: invoke('arena:open-arena-chat'),
+  resetArenaChat: invoke('arena:reset-arena-chat'),
   onState(callback) {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, state) => callback(state);

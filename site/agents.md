@@ -8,7 +8,7 @@ Treat this file as product documentation, not as permission to do extra work. Th
 
 ## What Arena Local does
 
-Arena Local is an Electron desktop companion. It runs a small task API on the user's computer and can expose that API through a temporary ngrok HTTPS tunnel. Arena's Bash tool calls the API with `curl` and a short-lived bearer pairing key. The desktop UI is not served through the tunnel; it stays local.
+Arena Local is an Electron desktop companion. It runs a small task API on the user's computer and can expose that API through a temporary ngrok HTTPS tunnel. Arena's Bash tool calls the API with `curl` and a short-lived bearer pairing key. The desktop UI is not served through the tunnel; it stays local. The desktop app can also optionally embed the arena.ai chat page inside a panel, and that panel loads only when the user opens it. The panel is a normal Chromium view of arena.ai: the conversation stays between the user and Arena, sign-in never reaches the bridge, and your tool requests still come back through the local approval flow.
 
 By default, `list_files`, `read_file`, `search_text`, and `write_file` are restricted to the selected workspace. They refuse absolute paths, parent traversal (`..`), symlink traversal, protected directories, and known credential filenames. A parent-folder listing may still show a protected filename or symlink entry (marked as protected), but the tools will not open or follow it. `write_file` cannot edit outside the selected workspace in the default mode. Optional `web_search` and `web_scrape` actions are separately controlled by a local Web tools toggle and start disabled.
 
@@ -49,6 +49,23 @@ When the user's task requires visual inspection of a PNG in the local workspace,
 8. Use Git actions only when health reports both `gitIntegrationEnabled: true` and `gitWorkspaceSelected: true`. The user can disable Git or Studio MCP locally; respect `false`/`disabled` and do not retry by another route. In full-computer mode, Git and desktop preview use a separately selected local folder, never the remote file scope.
 
 Do not ask the user to enable no-ask mode just to make a task easier. Never retry a pending or denied mutation with a new request ID to get around the desktop gate.
+
+## Explain before you touch — REQUIRED on every task
+
+The user is watching you from the Arena Local app (often from its embedded chat panel), and the app mirrors what you are about to do. On every task, and again before every action that changes state, you must first tell the user, in plain English:
+
+1. **What you are about to do and why** — the change, the reason, and how it fits the request.
+2. **The exact files you intend to touch** — repo-relative paths in workspace mode, or absolute paths when health reports `fullComputerAccess: true`. Include files you expect to create, modify, move, rename, or delete, not just the ones you will read.
+3. **What you will check afterward** — the verification you plan to run (a read-back, a test command, a diff review).
+
+Rules that are not optional:
+
+- **Never make a silent change.** If a step touches a file, that file must appear in your explanation before you request the bridge action that touches it.
+- **Keep the list current.** If the plan grows mid-task, restate the running list of files before touching anything new.
+- **Reads deserve a heads-up too.** Pure inspection still gets a one-line "I'm going to look at `x` because `y`."
+- **Summarize when done.** Post the final list of files actually touched, what changed in each, the checks you ran, and anything left open.
+- **Never claim an edit happened that did not**, and never touch a file you did not list. If you are unsure which files are involved, ask the user before acting — guessing is not a substitute for listing.
+- In Ask mode, listing the files is in addition to local approval; it never replaces it, and it never grants you permission to broaden the task.
 
 ## API workflow
 
@@ -162,7 +179,7 @@ The desktop app also has a local Git & repository workbench for initialization, 
 ## Quality-of-life tips
 
 1. **Explore before editing.** Use `list_files` to orient, `search_text` to find relevant code, then read only the best matches.
-2. **Make focused changes.** Prefer the smallest requested edit; use `write_file` for a specific file and explain the intended change in the task context.
+2. **Explain before you edit.** Prefer the smallest requested edit; use `write_file` for a specific file, show the files you plan to touch before touching them (see "Explain before you touch"), and cap the diff to the request.
 3. **Wait instead of resubmitting.** Poll the same `taskId`; in Ask mode, let the user approve or deny the original request.
 4. **Test proportionally.** If the user asks for validation, prefer a relevant, non-interactive test command. Shell requests time out after 30 seconds, so split long checks and explain what each command does.
 5. **Verify and summarize.** After an approved write, read back the affected file or inspect the relevant result, then summarize files changed, checks run, and any remaining issue.

@@ -13,6 +13,30 @@
   <script src="./app.js" defer></script>
 </head>
 <body>
+  <div class="splash" id="splash" role="status" aria-live="polite" aria-label="Arena Local is loading">
+    <div class="splash-inner">
+      <div class="splash-orb" aria-hidden="true">
+        <span class="splash-orb-halo"></span>
+        <span class="splash-orb-face">:3</span>
+        <span class="splash-sparkle splash-sparkle-one">✦</span>
+        <span class="splash-sparkle splash-sparkle-two">✦</span>
+      </div>
+      <h1 class="splash-wordmark">arena local <span class="splash-face">:3</span></h1>
+      <p class="splash-tagline">your desktop bridge, waking up…</p>
+      <div class="splash-progress" aria-hidden="true"><span class="splash-progress-shimmer"></span></div>
+      <p class="splash-status" id="splashStatus">starting the local permission gate…</p>
+      <div class="splash-ask">
+        <div class="splash-ask-head"><span class="splash-live-dot"></span> what the ai is asking to do</div>
+        <ul class="splash-ask-list" id="splashAskList">
+          <li class="splash-ask-empty">nothing pending — arena hasn’t asked for anything yet :3</li>
+        </ul>
+        <div class="splash-files-head">files it’s touching</div>
+        <div class="splash-files" id="splashFileChips"><span class="splash-files-empty">—</span></div>
+      </div>
+      <button class="splash-skip" id="splashSkipBtn" type="button">skip →</button>
+    </div>
+  </div>
+
   <div class="desktop-shell">
     <aside class="sidebar" aria-label="Arena Local navigation">
       <div class="brand-lockup">
@@ -28,6 +52,7 @@
 
       <div class="nav-label">CONTROL PANEL</div>
       <a class="nav-item active" href="#connection" aria-current="page"><span class="nav-icon">↗</span><span>Arena connection</span><span class="nav-dot" id="navConnectionDot"></span></a>
+      <a class="nav-item" href="#chat"><span class="nav-icon">✦</span><span>Chat with Arena</span></a>
       <a class="nav-item" href="#approvals"><span class="nav-icon">◷</span><span>Approvals</span><span class="nav-count" id="navApprovalCount">0</span></a>
       <a class="nav-item" href="#workspace"><span class="nav-icon">▱</span><span>Workspace files</span></a>
       <a class="nav-item" href="#gitRepository"><span class="nav-icon">⌘</span><span>Git & repository</span></a>
@@ -54,6 +79,20 @@
         <section class="primary-column">
           <div class="full-computer-access-banner" id="fullComputerAccessBanner" role="alert" hidden><span class="full-access-banner-icon">‼</span><div><strong id="fullComputerAccessBannerTitle">EXTREMELY DANGEROUS · FULL-COMPUTER ACCESS ACTIVE</strong><p id="fullComputerAccessBannerCopy">Arena can list, read, search, and request writes anywhere this OS account can access, including private and credential files. Requested contents can be sent to Arena.ai. Ask mode still requires local write approval. Stop the remote link to disable this mode and rotate the pairing key.</p></div></div>
           <div class="danger-mode-banner" id="dangerModeBanner" role="alert" hidden><span class="danger-banner-icon">!</span><div><strong id="dangerModeTitle">VERY DANGEROUS · NO-ASK MODE ACTIVE</strong><p id="dangerModeCopy">Arena file writes, Git commits, and terminal commands execute immediately. Shell commands can reach files outside the selected workspace. Stop the link, rotate the key, choose a different folder, switch to Ask or Read only, or close Arena Local to disable this mode.</p></div></div>
+          <div class="live-ask" id="liveAskBanner" role="status" aria-live="polite" hidden>
+            <div class="live-ask-main">
+              <span class="live-ask-pulse" aria-hidden="true"></span>
+              <div class="live-ask-copy">
+                <span class="live-ask-eyebrow">WHAT THE AI IS ASKING TO DO</span>
+                <ul class="live-ask-list" id="liveAskList"></ul>
+              </div>
+              <a class="live-ask-cta" href="#approvals">Review in approval queue ↓</a>
+            </div>
+            <div class="live-ask-files-row">
+              <span class="live-ask-files-label">files it’s touching</span>
+              <div class="live-ask-files" id="liveAskFiles"></div>
+            </div>
+          </div>
           <section class="hero-panel" id="connection">
             <div class="hero-copy">
               <div class="hero-kicker"><span>✳</span> PROMPT IN ARENA · WORK LOCALLY</div>
@@ -87,6 +126,34 @@
               <p class="control-pause-notice" id="controlPauseNotice" role="status" aria-live="polite" hidden>Remote control is paused on this computer. The HTTPS link and pairing key are unchanged; health checks still work, but other requests are blocked. Pending approvals are cancelled. Actions already running may finish.</p>
             </div>
             <div class="bridge-disclaimer"><span>!</span><p id="bridgeDisclaimerCopy">The bearer key lets Arena read files in this workspace. Rotate or stop the link to revoke it. Writes, Git commits, and shell commands pause for desktop approval. Web search and scraping start disabled and require native confirmation to enable.</p></div>
+          </section>
+
+          <section class="chat-card panel" id="chat" aria-labelledby="chatTitle">
+            <div class="card-heading">
+              <div><span class="section-eyebrow">TALK WITHOUT LEAVING</span><h2 id="chatTitle">Chat with Arena</h2></div>
+              <span class="step-mark" id="chatBadge" data-state="loading">ARENA.AI</span>
+            </div>
+            <p class="chat-intro">The real arena.ai agent, embedded right here. Sign in once and your session stays on this computer — your prompts go to Arena, and tool requests come back to this app for your approval. The chat only loads when you open it.</p>
+            <div class="chat-frame-wrap" id="chatFrameWrap">
+              <div class="chat-placeholder" id="chatPlaceholder">
+                <div class="chat-placeholder-face" aria-hidden="true">:3</div>
+                <strong>arena is one click away</strong>
+                <p>load the embedded arena.ai chat to prompt the agent without opening a browser.</p>
+                <button class="primary-button" id="loadArenaChatBtn" type="button"><span class="start-icon">✦</span> Load chat</button>
+              </div>
+              <div class="chat-loading" id="chatLoading" role="status" aria-live="polite" hidden><span class="mini-spinner"></span> Loading arena.ai…</div>
+              <div class="chat-fallback" id="chatFallback" hidden>
+                <strong>arena.ai could not load here</strong>
+                <p id="chatFallbackCopy">Check your internet connection, or open the chat in your regular browser instead.</p>
+                <button class="secondary-button" id="chatFallbackOpenBtn" type="button">Open arena.ai in browser ↗</button>
+              </div>
+            </div>
+            <div class="chat-actions">
+              <button class="secondary-button" id="reloadArenaChatBtn" type="button" disabled>Reload chat</button>
+              <button class="secondary-button" id="openArenaChatBrowserBtn" type="button">Open in browser ↗</button>
+              <button class="text-button" id="resetArenaChatBtn" type="button">Reset sign-in</button>
+            </div>
+            <p class="chat-safety">This panel embeds arena.ai exactly as your browser would — your sign-in and conversations stay between you and Arena. Arena Local never sees your Arena password or session token; it only receives the authenticated tool requests the agent makes through the link above.</p>
           </section>
 
           <section class="roblox-mcp-card panel" aria-labelledby="robloxMcpTitle">
@@ -241,7 +308,7 @@
           <section class="safety-note">
             <span class="safety-icon">!</span><div><strong>Terminal commands are not sandboxed</strong><p>Commands run as your OS user and can reach files outside this workspace. Only enable command access when you understand the risk.</p></div>
           </section>
-          <div class="privacy-foot">No Arena web page is embedded here. Your prompt stays on Arena.ai; this desktop app only receives authenticated tool requests.</div>
+          <div class="privacy-foot">The chat panel embeds arena.ai only when you open it; everything else stays local. Tool requests still come back here for your approval over the authenticated link.</div>
         </aside>
       </div>
     </main>

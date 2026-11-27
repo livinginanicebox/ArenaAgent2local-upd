@@ -150,6 +150,25 @@ const els = {
   fileFoot: $('#fileFoot'),
   fileDialog: $('#fileDialog'),
   toast: $('#toast'),
+  splash: $('#splash'),
+  splashStatus: $('#splashStatus'),
+  splashAskList: $('#splashAskList'),
+  splashFileChips: $('#splashFileChips'),
+  splashSkipBtn: $('#splashSkipBtn'),
+  liveAskBanner: $('#liveAskBanner'),
+  liveAskList: $('#liveAskList'),
+  liveAskFiles: $('#liveAskFiles'),
+  chatBadge: $('#chatBadge'),
+  chatFrameWrap: $('#chatFrameWrap'),
+  chatPlaceholder: $('#chatPlaceholder'),
+  chatLoading: $('#chatLoading'),
+  chatFallback: $('#chatFallback'),
+  chatFallbackCopy: $('#chatFallbackCopy'),
+  loadArenaChatBtn: $('#loadArenaChatBtn'),
+  reloadArenaChatBtn: $('#reloadArenaChatBtn'),
+  openArenaChatBrowserBtn: $('#openArenaChatBrowserBtn'),
+  resetArenaChatBtn: $('#resetArenaChatBtn'),
+  chatFallbackOpenBtn: $('#chatFallbackOpenBtn'),
 };
 
 function showToast(message, isError = false) {
@@ -173,6 +192,228 @@ function displayName(value) {
     return appState?.localWorkspaceName || String(localRoot).split(/[\\/]/).filter(Boolean).at(-1) || appState?.workspaceName || 'Workspace';
   }
   return String(value).split(/[\\/]/).filter(Boolean).at(-1) || value;
+}
+
+// --- what the ai is asking / which files it is touching ---
+const ACTIVE_TASK_STATUSES = ['running', 'preparing', 'awaiting_approval'];
+
+function taskFileTargets(task) {
+  const args = task?.args || {};
+  const targets = [];
+  const push = (value) => {
+    const text = String(value ?? '').trim();
+    if (text && !targets.includes(text)) targets.push(text);
+  };
+  push(args.path);
+  if (task?.action === 'run_command') push(args.cwd ? `cwd ${args.cwd}` : '');
+  if (task?.action === 'git_commit') push('git · staged changes');
+  if (task?.action === 'git_status' || task?.action === 'git_diff' || task?.action === 'git_log') push('git · local repository');
+  if (task?.action === 'web_search') push('web · duckduckgo');
+  if (task?.action === 'web_scrape') { try { push(new URL(args.url).hostname); } catch { push('web · public page'); } }
+  if (task?.action === 'roblox_tool') push(`studio · ${args.name || 'mcp tool'}`);
+  return targets;
+}
+
+function collectAskFiles(tasks) {
+  const files = [];
+  for (const task of tasks) {
+    for (const target of taskFileTargets(task)) {
+      if (!files.includes(target)) files.push(target);
+    }
+  }
+  return files;
+}
+
+function appendAskLine(container, task) {
+  const li = makeElement('li');
+  li.append(makeElement('span', '', taskTitle(task)));
+  li.append(makeElement('em', '', requestStatusLabel(task.status)));
+  container.append(li);
+}
+
+function appendFileChips(container, files, chipClass) {
+  for (const file of files.slice(0, 8)) {
+    const chip = makeElement('span', chipClass, file);
+    chip.title = file;
+    container.append(chip);
+  }
+}
+
+function renderSplashActivity(state) {
+  if (!els.splashAskList || !els.splashFileChips) return;
+  const active = (state?.tasks || []).filter((task) => ACTIVE_TASK_STATUSES.includes(task.status));
+  els.splashAskList.replaceChildren();
+  if (!active.length) {
+    els.splashAskList.append(makeElement('li', 'splash-ask-empty', 'nothing pending — arena hasn’t asked for anything yet :3'));
+  } else {
+    for (const task of active.slice(0, 6)) appendAskLine(els.splashAskList, task);
+  }
+  els.splashFileChips.replaceChildren();
+  const files = collectAskFiles(active);
+  if (!files.length) {
+    els.splashFileChips.append(makeElement('span', 'splash-files-empty', '—'));
+  } else {
+    appendFileChips(els.splashFileChips, files, 'splash-file-chip');
+  }
+}
+
+function renderLiveAsk(state) {
+  if (!els.liveAskBanner || !els.liveAskList || !els.liveAskFiles) return;
+  const active = (state?.tasks || []).filter((task) => ACTIVE_TASK_STATUSES.includes(task.status));
+  if (!active.length) {
+    els.liveAskBanner.hidden = true;
+    els.liveAskList.replaceChildren();
+    els.liveAskFiles.replaceChildren();
+    return;
+  }
+  els.liveAskBanner.hidden = false;
+  els.liveAskList.replaceChildren();
+  for (const task of active.slice(0, 4)) appendAskLine(els.liveAskList, task);
+  if (active.length > 4) els.liveAskList.append(makeElement('li', '', `+${active.length - 4} more request${active.length - 4 === 1 ? '' : 's'}…`));
+  els.liveAskFiles.replaceChildren();
+  const files = collectAskFiles(active);
+  if (!files.length) {
+    els.liveAskFiles.append(makeElement('span', 'splash-files-empty', 'no file paths yet'));
+  } else {
+    appendFileChips(els.liveAskFiles, files, 'live-ask-file');
+  }
+}
+
+// --- splash / loading screen controller ---
+const SPLASH_BOOT_LINES = [
+  'starting the local permission gate…',
+  'loading your workspace…',
+  'connecting the tunnel controls…',
+  'polishing the approval queue…',
+  'almost there :3',
+];
+let splashBootTimer = null;
+let splashBootIndex = 0;
+let splashFailsafeTimer = null;
+let splashShownAt = Date.now();
+
+function setSplashStatus(text) {
+  if (els.splashStatus) els.splashStatus.textContent = text;
+}
+
+function hideSplash() {
+  clearInterval(splashBootTimer);
+  clearTimeout(splashFailsafeTimer);
+  if (els.splash) {
+    els.splash.classList.add('done');
+    els.splash.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function startSplashBoot() {
+  splashShownAt = Date.now();
+  els.splashSkipBtn?.addEventListener('click', hideSplash);
+  setSplashStatus(SPLASH_BOOT_LINES[0]);
+  splashBootTimer = setInterval(() => {
+    splashBootIndex = (splashBootIndex + 1) % SPLASH_BOOT_LINES.length;
+    setSplashStatus(SPLASH_BOOT_LINES[splashBootIndex]);
+  }, 1500);
+  splashFailsafeTimer = setTimeout(hideSplash, 6_500);
+}
+
+function completeSplashBoot() {
+  clearInterval(splashBootTimer);
+  clearTimeout(splashFailsafeTimer);
+  setSplashStatus('ready :3');
+  const elapsed = Date.now() - splashShownAt;
+  const wait = Math.max(0, 1_150 - elapsed) + 500;
+  setTimeout(hideSplash, wait);
+}
+
+// --- embedded arena.ai chat ---
+const ARENA_CHAT_URL = 'https://arena.ai/';
+let arenaChatView = null;
+let arenaChatBusy = false;
+let arenaChatWatchdog = null;
+
+function setChatBadge(text, live = false) {
+  if (!els.chatBadge) return;
+  els.chatBadge.textContent = text;
+  els.chatBadge.classList.toggle('chat-badge-live', live);
+}
+
+function loadArenaChat() {
+  if (arenaChatBusy) return;
+  if (arenaChatView) {
+    arenaChatView.reload();
+    return;
+  }
+  if (!els.chatFrameWrap) return;
+  els.chatPlaceholder.hidden = true;
+  els.chatFallback.hidden = true;
+  els.chatLoading.hidden = false;
+  setChatBadge('LOADING…');
+  const view = document.createElement('webview');
+  view.id = 'arenaChatView';
+  view.className = 'arena-chat-view';
+  view.setAttribute('partition', 'persist:arena-chat');
+  view.setAttribute('webpreferences', 'contextIsolation=yes, sandbox=yes');
+  view.setAttribute('src', ARENA_CHAT_URL);
+  view.addEventListener('dom-ready', () => {
+    arenaChatBusy = false;
+    clearTimeout(arenaChatWatchdog);
+    els.chatLoading.hidden = true;
+    els.reloadArenaChatBtn.disabled = false;
+    setChatBadge('LIVE', true);
+  });
+  view.addEventListener('did-fail-load', (event) => {
+    if (event.isMainFrame === false || event.errorCode === -3) return;
+    arenaChatBusy = false;
+    clearTimeout(arenaChatWatchdog);
+    els.chatLoading.hidden = true;
+    els.chatFallback.hidden = false;
+    els.chatFallbackCopy.textContent = `arena.ai could not load (${event.errorDescription || 'network error'}). Check your internet connection, or open the chat in your regular browser instead.`;
+    setChatBadge('OFFLINE');
+  });
+  arenaChatBusy = true;
+  els.chatFrameWrap.append(view);
+  arenaChatView = view;
+  clearTimeout(arenaChatWatchdog);
+  arenaChatWatchdog = setTimeout(() => {
+    if (!arenaChatBusy) return;
+    arenaChatBusy = false;
+    els.chatLoading.hidden = true;
+    els.chatFallback.hidden = false;
+    els.chatFallbackCopy.textContent = 'arena.ai is taking too long to respond. Check your connection, then reload the chat or open it in your browser.';
+    setChatBadge('OFFLINE');
+  }, 15_000);
+}
+
+async function openArenaChatInBrowser() {
+  try {
+    await window.arenaLocal.openArenaChat();
+  } catch (error) {
+    showToast(error.message || 'Could not open arena.ai in your browser.', true);
+  }
+}
+
+async function resetArenaChatSession() {
+  try {
+    await window.arenaLocal.resetArenaChat();
+    if (arenaChatView) arenaChatView.reload();
+    showToast('Arena sign-in cleared on this device.');
+  } catch (error) {
+    showToast(error.message || 'Could not reset the chat session.', true);
+  }
+}
+
+function observeChatVisibility() {
+  if (!els.chatFrameWrap || typeof IntersectionObserver !== 'function') return;
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) {
+        loadArenaChat();
+        observer.disconnect();
+        break;
+      }
+    }
+  }, { rootMargin: '180px 0px', threshold: 0.05 });
+  observer.observe(els.chatFrameWrap);
 }
 
 function applyState(state) {
@@ -219,6 +460,8 @@ function applyState(state) {
   updateGitSelectionControls();
   renderApprovals();
   renderActivity();
+  renderLiveAsk(state);
+  renderSplashActivity(state);
   if (localWorkspaceChanged || firstRender) {
     selectedGitPaths.clear();
     void loadFiles('.');
@@ -1846,14 +2089,28 @@ for (const link of navigationItems) {
   });
 }
 
+function registerChatHandlers() {
+  els.loadArenaChatBtn?.addEventListener('click', loadArenaChat);
+  els.reloadArenaChatBtn?.addEventListener('click', () => arenaChatView?.reload());
+  els.openArenaChatBrowserBtn?.addEventListener('click', () => { void openArenaChatInBrowser(); });
+  els.chatFallbackOpenBtn?.addEventListener('click', () => { void openArenaChatInBrowser(); });
+  els.resetArenaChatBtn?.addEventListener('click', () => { void resetArenaChatSession(); });
+  observeChatVisibility();
+}
+
 async function init() {
+  startSplashBoot();
+  registerChatHandlers();
   try {
     appState = await window.arenaLocal.getState();
     applyState(appState);
     await loadFiles('.');
     window.arenaLocal.onState(applyState);
+    completeSplashBoot();
   } catch (error) {
+    setSplashStatus('something went wrong…');
     showToast(error.message || 'Arena Local could not initialize.', true);
+    completeSplashBoot();
   }
 }
 
