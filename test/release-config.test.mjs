@@ -56,14 +56,14 @@ test('desktop app element registry covers all references and matches the HTML', 
 
 test('updates page shows release publication dates and links to versioned installer downloads', () => {
   const releaseDates = {
-    '0.1.8': 'NOV 25, 2026',
-    '0.1.7': 'NOV 26, 2026',
-    '0.1.6': 'NOV 26, 2026',
-    '0.1.5': 'NOV 26, 2026',
-    '0.1.4': 'NOV 26, 2026',
-    '0.1.3': 'NOV 25, 2026',
-    '0.1.2': 'NOV 25, 2026',
-    '0.1.1': 'NOV 25, 2026',
+    '0.1.8': 'NOV 27, 2026 UTC',
+    '0.1.7': 'NOV 26, 2026 UTC',
+    '0.1.6': 'NOV 26, 2026 UTC',
+    '0.1.5': 'NOV 26, 2026 UTC',
+    '0.1.4': 'NOV 26, 2026 UTC',
+    '0.1.3': 'NOV 25, 2026 UTC',
+    '0.1.2': 'NOV 25, 2026 UTC',
+    '0.1.1': 'NOV 25, 2026 UTC',
   };
   for (const [version, date] of Object.entries(releaseDates)) {
     const start = changelogPage.indexOf(`<section class="page-section" aria-label="Version ${version} release notes">`);
