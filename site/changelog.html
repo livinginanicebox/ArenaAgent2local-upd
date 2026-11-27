@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a66">
+  <meta name="description" content="Arena Local v0.1.8 fixes a desktop startup issue and adds direct, version-specific Windows installer downloads.">
+  <meta property="og:title" content="Updates — Arena Local">
+  <meta property="og:description" content="See what's new in Arena Local v0.1.8, with release dates and direct Windows installer downloads for each version.">
+  <title>Updates // Arena Local</title>
+  <link rel="canonical" href="https://lumifaye.github.io/ArenaAgent2local/changelog.html">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="outer-frame">
+    <div class="top-strip"><div class="site-width top-strip-inner"><span><i class="status-led" aria-hidden="true"></i> ARENA LOCAL / CHANGELOG</span><span class="top-strip-right">SMALLER BUGS. BETTER SIGNAL.</span></div></div>
+    <div class="site-width">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Arena Local home"><span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-wordmark">ARENA<span>LOCAL</span><small>DESKTOP BRIDGE</small></span></a>
+        <button class="nav-toggle" id="navToggle" type="button" aria-expanded="false" aria-controls="primaryNav"><span>MENU</span><b aria-hidden="true">☰</b></button>
+        <nav class="main-nav" id="primaryNav" aria-label="Main navigation">
+          <a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html">FAQ</a><a href="./changelog.html" aria-current="page">Updates</a><a class="nav-github" href="./download.html">Download <span aria-hidden="true">↓</span></a>
+        </nav>
+      </header>
+      <main id="main" class="subpage-main">
+        <p class="breadcrumb"><a href="./">Home</a><span aria-hidden="true">/</span> Updates</p>
+        <section class="page-hero page-hero-compact" aria-labelledby="page-title">
+          <div><p class="eyebrow">RELEASE NOTES / NOVEMBER 27, 2026 UTC</p><h1 id="page-title">Starts cleanly.<br><span>Release notes, ready to install.</span></h1><p>Version 0.1.8 fixes a desktop startup crash and adds a direct Windows installer link for each release. Dates below match when each release was published.</p><div class="hero-inline-links"><a class="page-button page-button-primary" href="https://github.com/lumifaye/ArenaAgent2local/releases/download/v0.1.8/Arena-Local-Setup.exe" aria-label="Download Arena Local v0.1.8 Windows installer">Download v0.1.8 <span aria-hidden="true">↓</span></a><a class="quiet-link" href="https://github.com/lumifaye/ArenaAgent2local/releases/tag/v0.1.8" target="_blank" rel="noopener noreferrer">Open the release ↗</a></div></div>
+          <div class="release-badge"><span>ARENA LOCAL</span><strong>0.1.8</strong><small>DESKTOP UPDATE<br>WINDOWS X64</small></div>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.8 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.8</span><small>NOV 27, 2026 UTC</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-fix">FIXED</span><ul><li>Fix a desktop startup crash caused by the control-pause notice being registered under a different key than the renderer used.</li><li>Add a regression check that every desktop app element reference is registered and backed by an element in the desktop HTML.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">TUNED</span><ul><li>Show each release's actual publication date and provide a direct Windows installer download for every version listed here.</li></ul></div>
+            <a class="page-button page-button-primary" href="https://github.com/lumifaye/ArenaAgent2local/releases/download/v0.1.8/Arena-Local-Setup.exe" aria-label="Download Arena Local v0.1.8 Windows installer">Download v0.1.8 installer <span aria-hidden="true">↓</span></a>
+          </div></article>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.7 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.7</span><small>NOV 26, 2026 UTC</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-added">ADDED</span><ul><li>Add locally controlled <code>web_search</code> and <code>web_scrape</code> actions, disabled by default and enabled only after native confirmation.</li><li>Search DuckDuckGo and scrape one public HTTPS page into bounded text; web tools remain read-only and send no browser cookies or saved credentials.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">HARDENED</span><ul><li>Resolve and pin public IPv4 addresses, revalidate redirects, and bound response size, output length, request time, concurrency, and request rate.</li><li>Cancel active web requests when disabled and treat search snippets and scraped page text as untrusted data; document query, network-address, and content-sharing privacy implications.</li></ul></div>
+            <a class="page-button page-button-primary" href="https://github.com/lumifaye/ArenaAgent2local/releases/download/v0.1.7/Arena-Local-Setup.exe" aria-label="Download Arena Local v0.1.7 Windows installer">Download v0.1.7 installer <span aria-hidden="true">↓</span></a>
+          </div></article>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.6 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.6</span><small>NOV 26, 2026 UTC</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-added">ADDED</span><ul><li>Make full-computer remote file access workspace-free: require explicit absolute paths and an absolute shell working directory, while keeping desktop preview and Git on a separately selected local folder.</li><li>Add local Git and Roblox Studio MCP enable/disable controls that block their corresponding local workbenches and remote actions; disabling cancels pending approvals and Studio is disconnected.</li><li>Add locally confirmed GitHub pushes for classic and fine-grained PATs. Review outgoing commits in a native confirmation; no force-push or automatic push occurs.</li><li>Add local pause/resume control that preserves the tunnel URL and pairing key, cancels pending approvals, and returns HTTP 423 for non-health requests while paused; actions already running may finish.</li><li>Document a bounded workflow for transferring only a relevant PNG for visual inspection and deleting the temporary copy afterward.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">HARDENED</span><ul><li>Keep the GitHub PAT out of remotes, Git configuration, and command-line arguments; authenticate through a temporary askpass helper, verify TLS, disable mirror/follow-tags behavior, and push only the reviewed branch commit.</li><li>Redact local Roblox error paths from the remote tool-list response and validate push URLs as credential-free GitHub HTTPS remotes.</li></ul></div>
+            <a class="page-button page-button-primary" href="https://github.com/lumifaye/ArenaAgent2local/releases/download/v0.1.6/Arena-Local-Setup.exe" aria-label="Download Arena Local v0.1.6 Windows installer">Download v0.1.6 installer <span aria-hidden="true">↓</span></a>
+          </div></article>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.5 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.5</span><small>NOV 26, 2026 UTC</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-added">ADDED</span><ul><li>Add a local Git workbench for repository initialization, status, selected-file staging and unstaging, history, staged-diff review, and confirmed local commits.</li><li>Configure repository-local author identity and HTTPS remotes; GitHub account and repository lookup uses a token held by the desktop process and never writes credentials to Git configuration or remote URLs.</li><li>Add a bounded editor for repository-root <code>ARENA.md</code> instructions, treated as untrusted project context.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">HARDENED</span><ul><li>Keep Git operations workspace-root scoped, protect credential paths, suppress configured content filters during status and local staging/commits, and require a complete staged-diff preview plus local approval before commits.</li><li>Never push automatically; commits stay local, with hooks and signing disabled. GitHub lookup is read-only and tokens use OS secure storage when available.</li></ul></div>
+            <a class="page-button page-button-primary" href="https://github.com/lumifaye/ArenaAgent2local/releases/download/v0.1.5/Arena-Local-Setup.exe" aria-label="Download Arena Local v0.1.5 Windows installer">Download v0.1.5 installer <span aria-hidden="true">↓</span></a>
+          </div></article>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.4 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.4</span><small>NOV 26, 2026 UTC</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-added">ADDED</span><ul><li>Add an authenticated Roblox Studio MCP client that launches Studio's built-in server over local stdio and routes discovered tools through the Arena Local bridge.</li><li>Add workspace-root Git status, staged-only diffs, recent commit subjects, and local staged commits with a branch, files, full diff, and message preview for one-time local approval. Commits never push.</li><li>Add process listing that returns executable names and PIDs only, never command-line arguments.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">HARDENED</span><ul><li>Gate mutating and unknown Studio tools through Ask/Read only/No-Ask, with Studio instance IDs required for targeted calls.</li><li>Disable repository-configured clean/process filters during Git status and commit operations; working-tree diffs are unavailable to avoid executing filters. Commit hooks and signing are disabled.</li></ul></div>
+            <a class="page-button page-button-primary" href="https://github.com/lumifaye/ArenaAgent2local/releases/download/v0.1.4/Arena-Local-Setup.exe" aria-label="Download Arena Local v0.1.4 Windows installer">Download v0.1.4 installer <span aria-hidden="true">↓</span></a>
+          </div></article>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.3 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.3</span><small>NOV 25, 2026 UTC</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-fix">FIXED</span><ul><li>Prevent legitimate desktop actions from being rejected by a brittle Electron IPC sender-object check; requests now validate the current Arena Local window, its main frame, and the local UI entry point.</li><li>Apply the trusted-window check consistently to every desktop IPC handler while retaining rejection of remote pages and subframes.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">TUNED</span><ul><li>Refresh the desktop control center with the website's electric-blue, retro Windows visual style, improved text readability, and responsive layouts.</li></ul></div>
+            <a class="page-button page-button-primary" href="https://github.com/lumifaye/ArenaAgent2local/releases/download/v0.1.3/Arena-Local-Setup.exe" aria-label="Download Arena Local v0.1.3 Windows installer">Download v0.1.3 installer <span aria-hidden="true">↓</span></a>
+          </div></article>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.2 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.2</span><small>NOV 25, 2026 UTC</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-added">ADDED</span><ul><li>Support full-computer access with No-Ask only through an explicit local safety sequence: the exact warning, a 30-second lockout, slide-to-unlock, final native confirmation, and an additional warning before the remote link starts.</li><li>Rotate the pairing key when the combined mode is authorized; expire and invalidate unlock challenges when local access state changes, the workspace changes, or a connection starts.</li><li>Allow full-computer file tools to use absolute paths outside the selected workspace when explicitly enabled, while retaining text and size limits and local Ask/Read only controls.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">HARDENED</span><ul><li>Restrict mode-changing IPC to the trusted local Arena Local window; the remote API rejects permission/scope injection and denies combined-mode tasks without local authorization.</li><li>Use a monotonic clock for the waiting period and reset dangerous access modes when the connection stops, fails, the pairing key rotates, the workspace changes, or the app closes.</li><li>Show prominent combined-mode warnings and identify outside-workspace writes in the desktop review UI.</li></ul></div>
+            <a class="page-button page-button-primary" href="https://github.com/lumifaye/ArenaAgent2local/releases/download/v0.1.2/Arena-Local-Setup.exe" aria-label="Download Arena Local v0.1.2 Windows installer">Download v0.1.2 installer <span aria-hidden="true">↓</span></a>
+          </div></article>
+        </section>
+
+        <section class="page-section" aria-label="Version 0.1.1 release notes">
+          <article class="changelog-entry"><div class="changelog-marker"><span>0.1.1</span><small>NOV 25, 2026 UTC</small></div><div class="changelog-content">
+            <div class="change-group"><span class="change-label change-fix">FIXED</span><ul><li>Prevent an in-flight “allow exact action for session” approval from returning after the connection's session approvals are cleared.</li><li>Serialize tunnel start and stop transitions, expose connection progress, support cancelling a connection attempt, and close a late tunnel if the user cancelled during startup.</li><li>Ignore stale file-browser responses so slow earlier folder loads cannot overwrite a newer folder view.</li><li>Correct the empty-folder footer and avoid reporting a workspace change when the folder picker was cancelled.</li></ul></div>
+            <div class="change-group"><span class="change-label change-added">ADDED</span><ul><li>Filter visible entries in the desktop workspace browser without sending additional file contents anywhere.</li><li>Show the running app version in the desktop window and improved connecting/stopping states.</li><li>Publish dedicated Features, Getting started, Safety &amp; privacy, FAQ, Download, and Updates pages.</li><li>Attach a SHA-256 checksum sidecar to published Windows installers.</li><li>Add release metadata and checksum discovery to the download page.</li></ul></div>
+            <div class="change-group"><span class="change-label change-tuned">TUNED</span><ul><li>Improve keyboard, mobile navigation, reduced-motion behavior, live status text, and empty/loading states.</li><li>Expand the setup walkthrough, safety boundary explanations, and the release/download guidance.</li></ul></div>
+            <a class="page-button page-button-primary" href="https://github.com/lumifaye/ArenaAgent2local/releases/download/v0.1.1/Arena-Local-Setup.exe" aria-label="Download Arena Local v0.1.1 Windows installer">Download v0.1.1 installer <span aria-hidden="true">↓</span></a>
+          </div></article>
+        </section>
+
+        <section class="page-cta"><div><p class="eyebrow">THE PROJECT IS STILL A PROTOTYPE</p><h2>Feedback makes it better.</h2><p>Report reproducible bugs on GitHub, but never include a tunnel URL, bearer key, ngrok token, or private workspace content.</p></div><a class="page-button page-button-primary" href="https://github.com/lumifaye/ArenaAgent2local/issues" target="_blank" rel="noopener noreferrer">Open an issue <span aria-hidden="true">↗</span></a></section>
+      </main>
+      <footer class="site-footer page-footer"><a class="footer-brand" href="./">ARENA<span>LOCAL</span></a><p>Made for local work. Keep the pairing key private.</p><div><a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html">FAQ</a><a href="./agents.md">Agent guide</a><a href="./download.html">Download</a><a href="https://github.com/lumifaye/ArenaAgent2local" target="_blank" rel="noopener noreferrer">Source</a></div><small>© <span id="year">2026</span> Arena Local · An early prototype</small></footer>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a66">
+  <meta name="description" content="Download the latest Arena Local Windows x64 installer from GitHub Releases and verify its SHA-256 checksum.">
+  <meta property="og:title" content="Download — Arena Local">
+  <meta property="og:description" content="Get the latest stable Windows x64 installer and verify the release asset.">
+  <title>Download // Arena Local</title>
+  <link rel="canonical" href="https://lumifaye.github.io/ArenaAgent2local/download.html">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="outer-frame">
+    <div class="top-strip"><div class="site-width top-strip-inner"><span><i class="status-led" aria-hidden="true"></i> ARENA LOCAL / DOWNLOAD BAY</span><span class="top-strip-right">RELEASE ASSETS HOSTED ON GITHUB</span></div></div>
+    <div class="site-width">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Arena Local home"><span class="brand-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-wordmark">ARENA<span>LOCAL</span><small>DESKTOP BRIDGE</small></span></a>
+        <button class="nav-toggle" id="navToggle" type="button" aria-expanded="false" aria-controls="primaryNav"><span>MENU</span><b aria-hidden="true">☰</b></button>
+        <nav class="main-nav" id="primaryNav" aria-label="Main navigation">
+          <a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html">FAQ</a><a href="./changelog.html">Updates</a><a class="nav-github" href="./download.html" aria-current="page">Download <span aria-hidden="true">↓</span></a>
+        </nav>
+      </header>
+      <main id="main" class="subpage-main">
+        <p class="breadcrumb"><a href="./">Home</a><span aria-hidden="true">/</span> Download</p>
+        <section class="page-hero download-hero" aria-labelledby="page-title">
+          <div><p class="eyebrow">LATEST STABLE BUILD</p><h1 id="page-title">Your desktop.<br><span>Your call.</span></h1><p>Download the Windows x64 installer from the latest published GitHub Release. The release lookup refreshes automatically; the direct latest-download link remains available as a fallback.</p>
+            <a class="download-button download-page-button" id="downloadButton" href="https://github.com/lumifaye/ArenaAgent2local/releases/latest/download/Arena-Local-Setup.exe" aria-label="Download the latest Arena Local Windows x64 installer"><span class="download-arrow" aria-hidden="true">↓</span><span class="download-button-copy"><strong id="downloadTitle">Download for Windows</strong><small id="downloadSubtitle">Windows x64 · .EXE</small></span><span class="button-sparkle" aria-hidden="true">✦</span></a>
+            <p class="release-status" id="releaseStatus" role="status" aria-live="polite">Checking GitHub Releases…</p>
+          </div>
+          <aside class="release-console" aria-label="Latest release information"><span class="console-top"><i></i><i></i><i></i> RELEASE CHANNEL</span><div class="release-readout"><small>VERSION</small><strong id="releaseTag">Checking…</strong></div><div class="release-readout"><small>PUBLISHED</small><strong id="releaseDate">—</strong></div><div class="release-readout"><small>INSTALLER SIZE</small><strong id="installerSize">—</strong></div><a class="checksum-link" id="checksumLink" href="https://github.com/lumifaye/ArenaAgent2local/releases" target="_blank" rel="noopener noreferrer" hidden>Get SHA-256 checksum <span aria-hidden="true">↗</span></a><p class="release-origin">Official release assets are hosted on GitHub.</p></aside>
+        </section>
+
+        <section class="page-section" aria-labelledby="verify-title">
+          <div class="page-section-heading"><div><p class="eyebrow">BEFORE INSTALLING</p><h2 id="verify-title">Verify the release.</h2></div><p>Only run the installer if it came from this project's official GitHub Releases page and matches the checksum published alongside it.</p></div>
+          <div class="page-grid page-grid-two"><article class="info-card"><p class="card-kicker">WINDOWS X64 / NSIS</p><h3>Unsigned prototype build</h3><p>The installer is not code-signed. Windows may show an unrecognized-publisher SmartScreen warning. That warning is expected for this build, but it is not proof that any file is safe—verify the source and checksum first.</p></article><article class="info-card"><p class="card-kicker">SHA-256 SIDECAR</p><h3>Compare before opening</h3><p>Published releases include <code>Arena-Local-Setup.exe.sha256</code>. Download the checksum file from the same release and compare it with a locally calculated SHA-256 digest of the installer.</p><p class="fine-print">A matching hash helps detect accidental changes in transit; it does not replace trusting the release source.</p></article></div>
+          <div class="verify-snippet"><span>POWERSHELL / SHA-256</span><code>(Get-FileHash .\Arena-Local-Setup.exe -Algorithm SHA256).Hash</code><small>Compare this output to the hash in the downloaded <code>.sha256</code> file.</small></div>
+        </section>
+
+        <section class="page-section page-callout page-callout-blue"><span class="callout-mark" aria-hidden="true">↗</span><div><p class="eyebrow">NEW TO ARENA LOCAL?</p><h2>Download, then follow the setup walkthrough.</h2><p>Pick your workspace, add the ngrok authtoken, start a temporary link, then paste the copied setup prompt into Arena.ai. Keep the bearer key private.</p></div><a class="quiet-link" href="./getting-started.html">Open the quick start →</a></section>
+        <section class="page-cta"><div><p class="eyebrow">RELEASES &amp; SOURCE</p><h2>Want all the details?</h2><p>Browse every published version, installer asset, and source change on GitHub.</p></div><a class="page-button page-button-primary" href="https://github.com/lumifaye/ArenaAgent2local/releases" target="_blank" rel="noopener noreferrer">View all releases <span aria-hidden="true">↗</span></a></section>
+      </main>
+      <footer class="site-footer page-footer"><a class="footer-brand" href="./">ARENA<span>LOCAL</span></a><p>Made for local work. Keep the pairing key private.</p><div><a href="./features.html">Features</a><a href="./getting-started.html">Get started</a><a href="./safety.html">Safety</a><a href="./faq.html">FAQ</a><a href="./agents.md">Agent guide</a><a href="./download.html">Download</a><a href="https://github.com/lumifaye/ArenaAgent2local" target="_blank" rel="noopener noreferrer">Source</a></div><small>© <span id="year">2026</span> Arena Local · An early prototype</small></footer>
+    </div>
+  </div>
+</body>
+</html>

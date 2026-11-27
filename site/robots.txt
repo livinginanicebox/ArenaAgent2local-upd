@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://lumifaye.github.io/ArenaAgent2local/sitemap.xml

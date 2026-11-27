@@ -1,0 +1,72 @@
+name: Publish GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/8393bb53-arenaagent2local'
+    paths:
+      - 'site/**'
+      - 'index.html'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build-site:
+    name: Package static site
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+    steps:
+      - name: Check out site
+        uses: actions/checkout@v7
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Validate static site files
+        run: |
+          for file in \
+            site/index.html \
+            site/features.html \
+            site/getting-started.html \
+            site/safety.html \
+            site/faq.html \
+            site/download.html \
+            site/changelog.html \
+            site/404.html \
+            site/style.css \
+            site/site.js \
+            site/agents.md \
+            site/sitemap.xml \
+            site/robots.txt; do
+            test -s "$file"
+          done
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    name: Deploy site
+    needs: build-site
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
